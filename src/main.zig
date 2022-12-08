@@ -1,6 +1,7 @@
 const std = @import("std");
 const testing = std.testing;
 const assert = std.debug.assert;
+const ascii = std.ascii;
 
 const WS_MAGIC_KEY = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 var base64Encoder = std.base64.standard.Encoder;
@@ -50,209 +51,6 @@ test "isValidSecAccept" {
     try testing.expect(!isValidSecAccept("3yMLSWFdF1MH1YDDPW/aYQ==", "9bQuZIN64KrRsqgxuR1CxYN94zQ"));
 }
 
-test "header parser" {
-    var upgrade_request = "GET ws://127.0.0.1:9001/runCase?case=3&agent=Chrome/105.0.0.0 HTTP/1.1\r\nHost: 127.0.0.1:9001\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nOrigin: http://example.com\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Protocol: chat, superchat\r\nSec-WebSocket-Version: 13\r\n\r\n".*;
-    var fbs = std.io.fixedBufferStream(&upgrade_request);
-    var buf: [1024]u8 = undefined;
-    var reader = fbs.reader();
-
-    var request_line = try reader.readUntilDelimiter(&buf, '\n');
-    if (std.mem.endsWith(u8, request_line, "\r")) {
-        request_line = request_line[0 .. request_line.len - 1];
-    }
-
-    var tokens = std.mem.tokenize(u8, request_line, " \t");
-    while (tokens.next()) |token| {
-        std.debug.print("request line token: {s}\n", .{token});
-    }
-
-    //std.debug.print("\nstart line: {s}\n", .{start_line});
-
-    //ref: https://github.com/MasterQ32/zig-serve/blob/2e11e5671d52c256c66bd4d60b1e5975fb9f27f8/src/http.zig#L253
-    while (true) {
-        var header_line = try reader.readUntilDelimiter(&buf, '\n');
-        if (std.mem.endsWith(u8, header_line, "\r")) {
-            header_line = header_line[0 .. header_line.len - 1];
-        }
-        if (header_line.len == 0)
-            break;
-        const sep = std.mem.indexOfScalar(u8, header_line, ':') orelse return error.InvalidHeader;
-
-        const whitespace = " \t";
-        const key = std.mem.trim(u8, header_line[0..sep], whitespace);
-        const value = std.mem.trim(u8, header_line[sep + 1 ..], whitespace);
-        std.debug.print("header line: {s} '{s}' '{s}'\n", .{ header_line, key, value });
-    }
-}
-
-fn HeaderParser(comptime ReaderType: type) type {
-    return struct {
-        reader: ReaderType,
-        buf: [1024]u8 = undefined,
-
-        const Self = @This();
-        const Header = struct {
-            key: []const u8,
-            value: []const u8,
-        };
-
-        pub fn init(reader: ReaderType) Self {
-            return .{
-                .reader = reader,
-            };
-        }
-
-        pub fn requestLine(self: *Self) ![]const u8 {
-            var request_line = try self.reader.readUntilDelimiter(&self.buf, '\n');
-            if (std.mem.endsWith(u8, request_line, "\r")) {
-                request_line = request_line[0 .. request_line.len - 1];
-            }
-            return request_line;
-        }
-
-        pub fn header(self: *Self) !?Header {
-            var header_line = try self.reader.readUntilDelimiter(&self.buf, '\n');
-            if (std.mem.endsWith(u8, header_line, "\r")) {
-                header_line = header_line[0 .. header_line.len - 1];
-            }
-            if (header_line.len == 0)
-                return null;
-            const sep = std.mem.indexOfScalar(u8, header_line, ':') orelse return error.InvalidHeader;
-
-            const whitespace = " \t";
-            const key = std.mem.trim(u8, header_line[0..sep], whitespace);
-            const value = std.mem.trim(u8, header_line[sep + 1 ..], whitespace);
-            return Header{
-                .key = key,
-                .value = value,
-            };
-        }
-    };
-}
-
-fn headerParser(underlying_stream: anytype) HeaderParser(@TypeOf(underlying_stream)) {
-    return HeaderParser(@TypeOf(underlying_stream)).init(underlying_stream);
-}
-
-test "header parser" {
-    var upgrade_request = "GET ws://127.0.0.1:9001/runCase?case=3&agent=Chrome/105.0.0.0 HTTP/1.1\r\nHost: 127.0.0.1:9001\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nOrigin: http://example.com\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Protocol: chat, superchat\r\nSec-WebSocket-Version: 13\r\n\r\n".*;
-    var fbs = std.io.fixedBufferStream(&upgrade_request);
-    var reader = fbs.reader();
-
-    var parser = headerParser(reader);
-    while (try parser.header()) |h| {
-        std.debug.print("{s} => {s}\n", .{ h.key, h.value });
-    }
-}
-
-const HeaderParser2 = struct {
-    buf: []const u8,
-    index: usize = 0,
-
-    const Token = union(TokenTag) {
-        status: Status,
-        header: Header,
-    };
-    const TokenTag = enum {
-        status,
-        header,
-    };
-    const Header = struct {
-        key: []const u8,
-        value: []const u8,
-    };
-    const Status = struct {
-        line: []const u8,
-        pub fn tokens(self: Status) std.mem.TokenIterator(u8) {
-            return std.mem.tokenize(u8, self.line, " \t");
-        }
-    };
-
-    const Self = @This();
-
-    pub fn init(buf: []const u8) Self {
-        return .{ .buf = buf };
-    }
-
-    pub fn requestLine(self: *Self) ![]const u8 {
-        const i = std.mem.indexOfScalar(u8, self.buf, '\n') orelse return error.InvalidHeader;
-        var request_line = self.buf[0..i];
-        if (std.mem.endsWith(u8, request_line, "\r")) {
-            request_line = request_line[0 .. request_line.len - 1];
-        }
-    }
-
-    pub fn next(self: *Self) ?Token {
-        if (self.index == 0) {
-            const i = std.mem.indexOfScalar(u8, self.buf, '\n') orelse return null;
-            var request_line = self.buf[0..i];
-            if (std.mem.endsWith(u8, request_line, "\r")) {
-                request_line = request_line[0 .. request_line.len - 1];
-            }
-            self.index = i + 1;
-            return Token{ .status = Status{ .line = request_line } };
-        }
-        const i = std.mem.indexOfScalar(u8, self.buf[self.index..], '\n') orelse return null;
-        var header_line = self.buf[self.index .. self.index + i];
-        if (std.mem.endsWith(u8, header_line, "\r")) {
-            header_line = header_line[0 .. header_line.len - 1];
-        }
-        if (header_line.len == 0)
-            return null;
-        const sep = std.mem.indexOfScalar(u8, header_line, ':') orelse return null;
-
-        const whitespace = " \t";
-        const key = std.mem.trim(u8, header_line[0..sep], whitespace);
-        const value = std.mem.trim(u8, header_line[sep + 1 ..], whitespace);
-        self.index += i + 1;
-        return Token{ .header = Header{ .key = key, .value = value } };
-    }
-};
-
-test "headerParser2" {
-    //var upgrade_request = "GET ws://127.0.0.1:9001/runCase?case=3&agent=Chrome/105.0.0.0 HTTP/1.1\r\nHost: 127.0.0.1:9001\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nOrigin: http://example.com\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Protocol: chat, superchat\r\nSec-WebSocket-Version: 13\r\n\r\n".*;
-    var upgrade_request =
-        \\HTTP/1.1 101 Switching Protocols
-        \\Server: AutobahnTestSuite/0.8.2-0.10.9
-        \\X-Powered-By: AutobahnPython/0.10.9
-        \\Upgrade: WebSocket
-        \\Connection: Upgrade
-        \\Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=
-        \\
-    ;
-
-    var p = HeaderParser2.init(&upgrade_request.*);
-    const status = p.next().?.status;
-    var tokens = status.tokens();
-    try testing.expectEqualStrings("HTTP/1.1", tokens.next().?);
-    try testing.expectEqualStrings("101", tokens.next().?);
-    try testing.expectEqualStrings("Switching", tokens.next().?);
-    try testing.expectEqualStrings("Protocols", tokens.next().?);
-    try testing.expect(tokens.next() == null);
-
-    var header = p.next().?.header;
-    try testing.expectEqualStrings("Server", header.key);
-    try testing.expectEqualStrings("AutobahnTestSuite/0.8.2-0.10.9", header.value);
-
-    header = p.next().?.header;
-    try testing.expectEqualStrings("X-Powered-By", header.key);
-    try testing.expectEqualStrings("AutobahnPython/0.10.9", header.value);
-
-    header = p.next().?.header;
-    try testing.expectEqualStrings("Upgrade", header.key);
-    try testing.expectEqualStrings("WebSocket", header.value);
-
-    header = p.next().?.header;
-    try testing.expectEqualStrings("Connection", header.key);
-    try testing.expectEqualStrings("Upgrade", header.value);
-
-    header = p.next().?.header;
-    try testing.expectEqualStrings("Sec-WebSocket-Accept", header.key);
-    try testing.expectEqualStrings("s3pPLMBiTxaQ9kYGzzhZRbK+xOo=", header.value);
-
-    try testing.expect(p.next() == null);
-}
-
 test "parse response" {
     const rsp =
         \\HTTP/1.1 101 Switching Protocols
@@ -261,15 +59,35 @@ test "parse response" {
         \\Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=
         \\
     ;
+    try assertHttpResponse(rsp);
+
+    const rspWithCR = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n";
+    try assertHttpResponse(rspWithCR);
+}
+
+fn assertHttpResponse(rsp: []const u8) !void {
+    const sec_key = "dGhlIHNhbXBsZSBub25jZQ==";
+    const sec_accept = "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=";
+
     var p = try HttpResponse.parse(rsp);
     try testing.expectEqualStrings("HTTP/1.1", p.protocol);
     try testing.expectEqualStrings("101", p.status);
     try testing.expectEqualStrings("Switching Protocols", p.status_description);
 
-    var iter = p.headerIter();
-    while (iter.next()) |h| {
-        std.debug.print("{s} {s}\n", .{ h.key, h.value });
-    }
+    try testing.expectEqualStrings(p.getHeader("Sec-WebSocket-Accept").?, sec_accept);
+    try testing.expectEqualStrings(p.getHeader("upgrade").?, "websocket");
+    try testing.expect(p.hasHeader("upgrade", "websocket"));
+    try testing.expectEqualStrings(p.getHeader("connection").?, "Upgrade");
+    try testing.expect(p.hasHeader("connection", "UPGRADE")); // case insensitive match
+
+    try testing.expect(p.isValidWSResponse(sec_key));
+
+    // // print headers
+    // var iter = p.headerIter();
+    // std.debug.print("\n", .{});
+    // while (iter.next()) |h| {
+    //     std.debug.print("header: {s} {s}\n", .{ h.key, h.value });
+    // }
 }
 
 const HttpResponse = struct {
@@ -280,11 +98,11 @@ const HttpResponse = struct {
     status: []const u8,
     status_description: []const u8,
 
-    const whitespace = " \t";
     const Self = @This();
 
     pub fn parse(buffer: []const u8) !Self {
-        const status_line = try readLine(buffer, 0);
+        var start_index: usize = 0;
+        const status_line = try readLine(buffer, &start_index);
         const sp1 = std.mem.indexOfScalar(u8, status_line, ' ') orelse return error.InvalidHttpResponse;
         const sp2 = std.mem.indexOfScalarPos(u8, status_line, sp1 + 1, ' ') orelse return error.InvalidHttpResponse;
         return .{
@@ -292,19 +110,52 @@ const HttpResponse = struct {
             .status = status_line[sp1 + 1 .. sp2],
             .status_description = status_line[sp2 + 1 ..],
             .buffer = buffer,
-            // TODO this +2 can be overflow
-            .headers = buffer[status_line.len + 2 ..],
+            .headers = buffer[start_index..],
         };
     }
 
     pub fn headerIter(self: *Self) HeaderIterator {
         return HeaderIterator{ .buffer = self.headers };
     }
+
+    pub fn isValidWSResponse(self: *Self, sec_key: []const u8) bool {
+        if (!std.mem.eql(u8, self.status, "101")) return false;
+
+        var iter = self.headerIter();
+        var upgrade_headers: usize = 0;
+        var sec_accept_valid = false;
+
+        while (iter.next()) |h| {
+            if (h.match("upgrade", "websocket")) upgrade_headers += 1;
+            if (h.match("connection", "upgrade")) upgrade_headers += 1;
+            if (h.keyMatch("sec-websocket-accept")) {
+                sec_accept_valid = isValidSecAccept(sec_key, h.value);
+            }
+        }
+
+        return upgrade_headers == 2 and sec_accept_valid;
+    }
+
+    pub fn hasHeader(self: *Self, key: []const u8, value: []const u8) bool {
+        var iter = self.headerIter();
+        while (iter.next()) |h|
+            if (h.match(key, value)) return true;
+        return false;
+    }
+
+    pub fn getHeader(self: *Self, key: []const u8) ?[]const u8 {
+        var iter = self.headerIter();
+        while (iter.next()) |h|
+            if (h.keyMatch(key)) return h.value;
+        return null;
+    }
 };
 
-fn readLine(buffer: []const u8, start_index: usize) ![]const u8 {
-    const eol = std.mem.indexOfScalarPos(u8, buffer, start_index, '\n') orelse return error.InvalidHttpResponse;
-    var line = buffer[0..eol];
+fn readLine(buffer: []const u8, start_index: *usize) ![]const u8 {
+    const si = start_index.*;
+    const eol = std.mem.indexOfScalarPos(u8, buffer, si, '\n') orelse return error.InvalidHttpResponse;
+    var line = buffer[si..eol];
+    start_index.* += line.len + 1;
     if (std.mem.endsWith(u8, line, "\r")) {
         line = line[0 .. line.len - 1];
     }
@@ -318,21 +169,30 @@ const HeaderIterator = struct {
     const Header = struct {
         key: []const u8,
         value: []const u8,
+
+        pub fn keyMatch(h: Header, key: []const u8) bool {
+            return ascii.eqlIgnoreCase(h.key, key);
+        }
+
+        pub fn match(h: Header, key: []const u8, value: []const u8) bool {
+            return (ascii.eqlIgnoreCase(h.key, key) and
+                ascii.eqlIgnoreCase(h.value, value));
+        }
     };
 
     const Self = @This();
 
     pub fn next(self: *Self) ?Header {
-        const header_line = readLine(self.buffer, self.index) catch return null;
+        const header_line = readLine(self.buffer, &self.index) catch return null;
         if (header_line.len == 0)
             return null;
         const sep = std.mem.indexOfScalar(u8, header_line, ':') orelse return null;
+        //std.debug.print("header_line: {s} {d}\n", .{ header_line, self.index });
 
         const whitespace = " \t";
         const key = std.mem.trim(u8, header_line[0..sep], whitespace);
         const value = std.mem.trim(u8, header_line[sep + 1 ..], whitespace);
 
-        self.index += header_line.len + 2;
         return Header{ .key = key, .value = value };
     }
 };
