@@ -252,3 +252,87 @@ test "headerParser2" {
 
     try testing.expect(p.next() == null);
 }
+
+test "parse response" {
+    const rsp =
+        \\HTTP/1.1 101 Switching Protocols
+        \\Upgrade: websocket
+        \\Connection: Upgrade
+        \\Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=
+        \\
+    ;
+    var p = try HttpResponse.parse(rsp);
+    try testing.expectEqualStrings("HTTP/1.1", p.protocol);
+    try testing.expectEqualStrings("101", p.status);
+    try testing.expectEqualStrings("Switching Protocols", p.status_description);
+
+    var iter = p.headerIter();
+    while (iter.next()) |h| {
+        std.debug.print("{s} {s}\n", .{ h.key, h.value });
+    }
+}
+
+const HttpResponse = struct {
+    buffer: []const u8,
+    headers: []const u8,
+
+    protocol: []const u8,
+    status: []const u8,
+    status_description: []const u8,
+
+    const whitespace = " \t";
+    const Self = @This();
+
+    pub fn parse(buffer: []const u8) !Self {
+        const status_line = try readLine(buffer, 0);
+        const sp1 = std.mem.indexOfScalar(u8, status_line, ' ') orelse return error.InvalidHttpResponse;
+        const sp2 = std.mem.indexOfScalarPos(u8, status_line, sp1 + 1, ' ') orelse return error.InvalidHttpResponse;
+        return .{
+            .protocol = status_line[0..sp1],
+            .status = status_line[sp1 + 1 .. sp2],
+            .status_description = status_line[sp2 + 1 ..],
+            .buffer = buffer,
+            // TODO this +2 can be overflow
+            .headers = buffer[status_line.len + 2 ..],
+        };
+    }
+
+    pub fn headerIter(self: *Self) HeaderIterator {
+        return HeaderIterator{ .buffer = self.headers };
+    }
+};
+
+fn readLine(buffer: []const u8, start_index: usize) ![]const u8 {
+    const eol = std.mem.indexOfScalarPos(u8, buffer, start_index, '\n') orelse return error.InvalidHttpResponse;
+    var line = buffer[0..eol];
+    if (std.mem.endsWith(u8, line, "\r")) {
+        line = line[0 .. line.len - 1];
+    }
+    return line;
+}
+
+const HeaderIterator = struct {
+    buffer: []const u8,
+    index: usize = 0,
+
+    const Header = struct {
+        key: []const u8,
+        value: []const u8,
+    };
+
+    const Self = @This();
+
+    pub fn next(self: *Self) ?Header {
+        const header_line = readLine(self.buffer, self.index) catch return null;
+        if (header_line.len == 0)
+            return null;
+        const sep = std.mem.indexOfScalar(u8, header_line, ':') orelse return null;
+
+        const whitespace = " \t";
+        const key = std.mem.trim(u8, header_line[0..sep], whitespace);
+        const value = std.mem.trim(u8, header_line[sep + 1 ..], whitespace);
+
+        self.index += header_line.len + 2;
+        return Header{ .key = key, .value = value };
+    }
+};
