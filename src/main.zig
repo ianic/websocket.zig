@@ -3,6 +3,7 @@ const testing = std.testing;
 const assert = std.debug.assert;
 const ascii = std.ascii;
 const mem = std.mem;
+const fmt = std.fmt;
 
 const WS_MAGIC_KEY = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 var base64Encoder = std.base64.standard.Encoder;
@@ -188,3 +189,35 @@ fn assertHttpResponse(rsp: []const u8) !void {
 
     try testing.expect(isWebSocketUpgrade(&p, sec_key));
 }
+
+test "request" {
+    var buf: [4096]u8 = undefined;
+    var hs = Handshake.init("127.0.0.1:9001");
+    std.debug.print("hs: {s}", .{try hs.request(&buf, "/pero")});
+
+    //const format = "GET ws://?{s} HTTP/1.1\r\nHost: {s}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {s}\r\nSec-WebSocket-Version: 13\r\n\r\n";
+    //try fmt.bufPrint(&buf, format, .{ host, host, sec_key });
+}
+
+pub const Handshake = struct {
+    sec_key: [24]u8,
+    host: []const u8,
+
+    const Self = @This();
+    pub fn init(host: []const u8) Self {
+        return .{
+            .sec_key = secKey(),
+            .host = host,
+        };
+    }
+
+    pub fn request(self: *Self, buf: []u8, path: []const u8) ![]u8 {
+        const format = "GET ws://{s}{s} HTTP/1.1\r\nHost: {s}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {s}\r\nSec-WebSocket-Version: 13\r\n\r\n";
+        return try fmt.bufPrint(buf, format, .{ self.host, path, self.host, self.sec_key });
+    }
+
+    pub fn isValidResponse(self: *Self, buf: []const u8) bool {
+        var rsp = HttpResponse.parse(buf) catch return false;
+        return isWebSocketUpgrade(&rsp, &self.sec_key);
+    }
+};

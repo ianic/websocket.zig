@@ -6,7 +6,7 @@ pub fn build(b: *std.build.Builder) void {
     const mode = b.standardReleaseOptions();
     const target = b.standardTargetOptions(.{});
 
-    const lib = b.addStaticLibrary("websocket.zig", "src/main.zig");
+    const lib = b.addStaticLibrary("websocket", "src/main.zig");
     lib.setBuildMode(mode);
     lib.install();
 
@@ -21,8 +21,7 @@ pub fn build(b: *std.build.Builder) void {
         "connect",
     }) |example_name| {
         const example = b.addExecutable(example_name, "examples/" ++ example_name ++ ".zig");
-        //example.addPackagePath("nats", "./src/conn.zig");
-        //example.addPackagePath("nats-sync", "./src/sync.zig");
+        example.addPackagePath("websocket", "./src/main.zig");
         example.setBuildMode(mode);
         example.setTarget(target);
         example.install();
