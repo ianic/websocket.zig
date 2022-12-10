@@ -52,27 +52,30 @@ fn runCase(path: []const u8) !void {
     while (true) {
         const buf = read_buf[hwm..eob];
         if (buf.len > 0) {
-            // std.debug.print("\n", .{});
-            // for (buf) |b|
-            //     std.debug.print("{x:0>2} ", .{b});
-
+            // decode frame
             var rsp = try ws.Frame.decode(buf);
-            if (rsp[0] < 0) unreachable;
-            var fr = rsp[1];
-            var fe = fr.echo();
-            const offset = fe.encode(&write_buf);
-            _ = try client.write(write_buf[0..@intCast(usize, offset)], 0);
-            // std.debug.print("\nrsp: ", .{});
-            // for (write_buf[0..@intCast(usize, offset)]) |b|
-            //     std.debug.print("{x:0>2} ", .{b});
+            if (rsp.required_bytes > 0) unreachable;
+            var frame = rsp.frame.?;
+            var echo_frame = frame.echo();
 
-            if (fr.opcode == .close) {
+            // send echo frame
+            const encode_rsp = echo_frame.encode(&write_buf);
+            switch (encode_rsp) {
+                .required_bytes => |rb| {
+                    std.log.err("write buf len: {d}, required: {d}", .{ write_buf.len, rb });
+                    unreachable;
+                },
+                .bytes => |rb| {
+                    _ = try client.write(write_buf[0..rb], 0);
+                },
+            }
+            // close if recived close frame
+            if (frame.opcode == .close) {
                 try client.shutdown(.both);
                 return;
             }
-
-            hwm += @intCast(usize, rsp[0]);
-            if (hwm < eob) {
+            hwm += rsp.bytes;
+            if (hwm < eob) { // there is something more in buf
                 continue;
             }
         }
@@ -84,6 +87,12 @@ fn runCase(path: []const u8) !void {
         }
         eob = br;
     }
+}
+
+fn showBuf(buf: []const u8) void {
+    std.debug.print("\n", .{});
+    for (buf) |b|
+        std.debug.print("{x:0>2} ", .{b});
 }
 
 fn tcpConnect() !tcp.Client {
