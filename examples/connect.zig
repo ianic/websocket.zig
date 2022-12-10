@@ -4,14 +4,25 @@ const tcp = net.tcp;
 const ws = @import("websocket");
 
 const http_request_separator = "\r\n\r\n";
+
 pub fn main() !void {
+    const tests = [_]u8{ 1, 2, 3, 4, 5 };
+
+    var buf: [128]u8 = undefined;
+    for (tests) |t| {
+        const path = try std.fmt.bufPrint(&buf, "/runCase?case={d}&agent=websocket.zig", .{t});
+        try runCase(path);
+    }
+}
+
+fn runCase(path: []const u8) !void {
     const client = try tcpConnect();
 
     var write_buf: [4096]u8 = undefined;
     var read_buf: [4096]u8 = undefined;
     var hs = ws.Handshake.init("127.0.0.1:9001");
 
-    _ = try client.write(try hs.request(&write_buf, "/runCase?case=7&agent=zig"), 0);
+    _ = try client.write(try hs.request(&write_buf, path), 0);
     var hwm: usize = 0;
     var eob: usize = 0;
 

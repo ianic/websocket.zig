@@ -102,6 +102,13 @@ pub const Frame = struct {
     }
 
     pub fn encode(self: *Self, buf: []u8) isize {
+        const payload_len: u64 = self.payload.len;
+        const buf_len: usize = 1 + if (payload_len < 126) 1 else if (payload_len < 65536) 3 else 9 +
+            if (self.mask == 1) 4 else 0 + payload_len;
+        if (buf.len < buf_len) {
+            return -@intCast(isize, buf_len);
+        }
+
         buf[0] = (@intCast(u8, self.fin) << 7) +
             (@intCast(u8, self.rsv1) << 6) +
             (@intCast(u8, self.rsv2) << 5) +
@@ -109,28 +116,23 @@ pub const Frame = struct {
             @enumToInt(self.opcode);
 
         var offset: usize = 1;
-        const payload_len = self.payload.len;
+
+        buf[1] = (@intCast(u8, self.mask) << 7);
         if (payload_len < 126) {
-            buf[1] = (@intCast(u8, self.mask) << 7) + @intCast(u8, payload_len);
-            offset += 1;
+            buf[1] += @intCast(u8, payload_len);
+            offset = 2;
         } else if (payload_len <= 65536) {
-            buf[1] = (@intCast(u8, self.mask) << 7) + 126;
-            buf[2] = @intCast(u8, payload_len >> 8);
-            buf[3] = @intCast(u8, payload_len & 0x00ff);
-            offset += 3;
+            buf[1] += 126;
+            std.mem.writeInt(u16, buf[2..4], @intCast(u16, payload_len), .Big);
+            offset = 4;
         } else {
-            buf[1] = (@intCast(u8, self.mask) << 7) + 127;
-            offset += 4;
+            buf[1] += 127;
+            std.mem.writeInt(u64, buf[2..10], payload_len, .Big);
+            offset = 10;
         }
 
-        // TODO payload len
-
         if (self.mask == 1) {
-            // TODO if masked
-            buf[offset] = self.masking_key[0];
-            buf[offset + 1] = self.masking_key[1];
-            buf[offset + 2] = self.masking_key[2];
-            buf[offset + 3] = self.masking_key[3];
+            std.mem.copy(u8, buf[offset .. offset + 4], &self.masking_key);
             offset += 4;
         }
 
@@ -141,7 +143,7 @@ pub const Frame = struct {
     }
 
     fn setMaskingKey(self: *Self) void {
-        self.mask = U1_1;
+        self.mask = 1;
         rnd.random().bytes(&self.masking_key);
     }
 };
@@ -273,4 +275,14 @@ test "encode" {
     // ef = f.echo();
     // offset = @intCast(usize, ef.encode(&buf));
     // try testing.expectEqualSlices(u8, buf[0..offset], &close);
+}
+
+test {
+    const x: u32 = 0xabcd;
+    //const buf = std.mem.toBytes(x);
+    var buf: [8]u8 = undefined;
+    std.mem.writeInt(u64, &buf, x, .Big);
+
+    for (&buf) |b|
+        std.debug.print("{x:0>2} ", .{b});
 }
