@@ -9,6 +9,8 @@ const WS_MAGIC_KEY = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 var base64Encoder = std.base64.standard.Encoder;
 var rnd = std.rand.DefaultPrng.init(0);
 
+pub const Frame = @import("frame.zig").Frame;
+
 fn secKey() [24]u8 {
     var buf: [16]u8 = undefined;
     var ret: [24]u8 = undefined;

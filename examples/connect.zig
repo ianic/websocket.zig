@@ -7,27 +7,28 @@ const http_request_separator = "\r\n\r\n";
 pub fn main() !void {
     const client = try tcpConnect();
 
-    var scratch_buf: [4096]u8 = undefined;
+    var write_buf: [4096]u8 = undefined;
+    var read_buf: [4096]u8 = undefined;
     var hs = ws.Handshake.init("127.0.0.1:9001");
 
-    _ = try client.write(try hs.request(&scratch_buf, "/runCase?case=1&agent=zig"), 0);
+    _ = try client.write(try hs.request(&write_buf, "/runCase?case=7&agent=zig"), 0);
     var hwm: usize = 0;
     var eob: usize = 0;
 
     // handshake
     while (true) {
-        const br = try client.read(scratch_buf[eob..], 0);
+        const br = try client.read(read_buf[eob..], 0);
         if (br == 0) {
             return;
         }
         eob += br;
-        const buf = scratch_buf[0..eob];
+        const buf = read_buf[0..eob];
         var eor = std.mem.indexOf(u8, buf, http_request_separator) orelse 0;
         if (eor == 0) {
             continue;
         }
         eor += http_request_separator.len;
-        const rsp_buf = scratch_buf[0..eor];
+        const rsp_buf = read_buf[0..eor];
         if (!hs.isValidResponse(rsp_buf)) {
             try client.shutdown(.both);
             return;
@@ -38,16 +39,35 @@ pub fn main() !void {
 
     // reading messages
     while (true) {
-        const buf = scratch_buf[hwm..eob];
+        const buf = read_buf[hwm..eob];
         if (buf.len > 0) {
-            std.debug.print("\n", .{});
-            for (buf) |b|
-                //std.debug.print("{b:0>8} ", .{b});
-                std.debug.print("{x:0>2} ", .{b});
+            // std.debug.print("\n", .{});
+            // for (buf) |b|
+            //     std.debug.print("{x:0>2} ", .{b});
+
+            var rsp = try ws.Frame.decode(buf);
+            if (rsp[0] < 0) unreachable;
+            var fr = rsp[1];
+            var fe = fr.echo();
+            const offset = fe.encode(&write_buf);
+            _ = try client.write(write_buf[0..@intCast(usize, offset)], 0);
+            // std.debug.print("\nrsp: ", .{});
+            // for (write_buf[0..@intCast(usize, offset)]) |b|
+            //     std.debug.print("{x:0>2} ", .{b});
+
+            if (fr.opcode == .close) {
+                try client.shutdown(.both);
+                return;
+            }
+
+            hwm += @intCast(usize, rsp[0]);
+            if (hwm < eob) {
+                continue;
+            }
         }
         hwm = 0;
         eob = 0;
-        const br = try client.read(scratch_buf[eob..], 0);
+        const br = try client.read(read_buf[eob..], 0);
         if (br == 0) {
             return;
         }

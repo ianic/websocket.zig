@@ -1,14 +1,14 @@
 const std = @import("std");
 const testing = std.testing;
 
-const Frame = struct {
+pub const Frame = struct {
     fin: u1,
     rsv1: u1,
     rsv2: u1,
     rsv3: u1,
     opcode: Opcode,
-    mask: u1,
-    masking_key: []const u8,
+    mask: u1 = U1_0,
+    masking_key: [4]u8 = [_]u8{ 0, 0, 0, 0 },
     payload: []u8,
     frame_len: u64,
 
@@ -22,16 +22,16 @@ const Frame = struct {
     };
 
     const Self = @This();
-    const invalidFrame = Self{ .fin = 0, .rsv1 = 0, .rsv2 = 0, .rsv3 = 0, .opcode = .close, .mask = 0, .masking_key = &[0]u8{}, .payload = &[0]u8{}, .frame_len = 0 };
+    const invalidFrame = Self{ .fin = 0, .rsv1 = 0, .rsv2 = 0, .rsv3 = 0, .opcode = .close, .mask = 0, .payload = &[0]u8{}, .frame_len = 0 };
 
     // first attribute:
     //   - if positive => number of bytes consumed from buf
     //   - if negative => number of bytes missing in buf
-    pub fn parse(buf: []u8) !struct { isize, Frame } {
+    pub fn decode(buf: []u8) !struct { isize, Frame } {
         if (buf.len < 2) {
             return .{ -2, invalidFrame };
         }
-        const pl_rsp = try parsePayloadLen(buf[1..]);
+        const pl_rsp = try decodePayloadLen(buf[1..]);
         const pl_bytes = pl_rsp[0];
         if (pl_bytes < 0) {
             return .{ pl_bytes - 1, invalidFrame };
@@ -48,17 +48,22 @@ const Frame = struct {
             return .{ -@intCast(isize, frame_len), invalidFrame };
         }
 
-        const f = Frame{
+        var f = Frame{
             .fin = if (buf[0] & 0x80 == 0x80) U1_1 else U1_0,
             .rsv1 = if (buf[0] & 0x40 == 0x40) U1_1 else U1_0,
             .rsv2 = if (buf[0] & 0x20 == 0x20) U1_1 else U1_0,
             .rsv3 = if (buf[0] & 0x10 == 0x10) U1_1 else U1_0,
             .opcode = try getOpcode(@intCast(u4, buf[0] & 0x0f)),
             .mask = if (masked) U1_1 else U1_0,
-            .masking_key = if (masked) buf[mask_start .. mask_start + 4] else buf[0..0],
             .payload = buf[payload_start..frame_len],
             .frame_len = frame_len,
         };
+        if (masked) {
+            f.masking_key[0] = buf[mask_start];
+            f.masking_key[1] = buf[mask_start + 1];
+            f.masking_key[2] = buf[mask_start + 2];
+            f.masking_key[3] = buf[mask_start + 3];
+        }
         return .{ @intCast(isize, frame_len), f };
     }
 
@@ -75,17 +80,77 @@ const Frame = struct {
     }
 
     fn maskPayload(self: *Self) void {
-        maskUnmask(self.masking_key, self.payload);
+        maskUnmask(&self.masking_key, self.payload);
     }
     fn unmaskPayload(self: *Self) void {
-        maskUnmask(self.masking_key, self.payload);
+        maskUnmask(&self.masking_key, self.payload);
+    }
+
+    pub fn echo(self: *Self) Frame {
+        var f = Frame{
+            .fin = self.fin,
+            .rsv1 = self.rsv1,
+            .rsv2 = self.rsv2,
+            .rsv3 = self.rsv3,
+            .opcode = self.opcode,
+            .payload = self.payload,
+            .frame_len = self.frame_len,
+        };
+        //if (f.opcode == .text or f.opcode == .binary)
+        f.setMaskingKey();
+        return f;
+    }
+
+    pub fn encode(self: *Self, buf: []u8) isize {
+        buf[0] = (@intCast(u8, self.fin) << 7) +
+            (@intCast(u8, self.rsv1) << 6) +
+            (@intCast(u8, self.rsv2) << 5) +
+            (@intCast(u8, self.rsv1) << 4) +
+            @enumToInt(self.opcode);
+
+        var offset: usize = 1;
+        const payload_len = self.payload.len;
+        if (payload_len < 126) {
+            buf[1] = (@intCast(u8, self.mask) << 7) + @intCast(u8, payload_len);
+            offset += 1;
+        } else if (payload_len <= 65536) {
+            buf[1] = (@intCast(u8, self.mask) << 7) + 126;
+            buf[2] = @intCast(u8, payload_len >> 8);
+            buf[3] = @intCast(u8, payload_len & 0x00ff);
+            offset += 3;
+        } else {
+            buf[1] = (@intCast(u8, self.mask) << 7) + 127;
+            offset += 4;
+        }
+
+        // TODO payload len
+
+        if (self.mask == 1) {
+            // TODO if masked
+            buf[offset] = self.masking_key[0];
+            buf[offset + 1] = self.masking_key[1];
+            buf[offset + 2] = self.masking_key[2];
+            buf[offset + 3] = self.masking_key[3];
+            offset += 4;
+        }
+
+        std.mem.copy(u8, buf[offset..], self.payload);
+        maskUnmask(&self.masking_key, buf[offset .. offset + self.payload.len]);
+
+        return @intCast(isize, self.payload.len + offset);
+    }
+
+    fn setMaskingKey(self: *Self) void {
+        self.mask = U1_1;
+        rnd.random().bytes(&self.masking_key);
     }
 };
+var rnd = std.rand.DefaultPrng.init(0);
 
 const U1_1: u1 = 1;
 const U1_0: u1 = 0;
 
-fn parsePayloadLen(buf: []const u8) !struct { isize, u64 } {
+fn decodePayloadLen(buf: []const u8) !struct { isize, u64 } {
     if (buf.len < 1) return .{ -1, 0 };
 
     var pl: u64 = buf[0] & 0x7f;
@@ -112,33 +177,33 @@ fn parsePayloadLen(buf: []const u8) !struct { isize, u64 } {
     return .{ 9, pl };
 }
 
-test "parsePayloadLen" {
+test "decodePayloadLen" {
     // 1 byte
-    try testing.expectEqual(try parsePayloadLen(&[_]u8{0x00}), .{ 1, 0 });
-    try testing.expectEqual(try parsePayloadLen(&[_]u8{0x0a}), .{ 1, 0xa });
-    try testing.expectEqual(try parsePayloadLen(&[_]u8{0x7d}), .{ 1, 0x7d });
+    try testing.expectEqual(try decodePayloadLen(&[_]u8{0x00}), .{ 1, 0 });
+    try testing.expectEqual(try decodePayloadLen(&[_]u8{0x0a}), .{ 1, 0xa });
+    try testing.expectEqual(try decodePayloadLen(&[_]u8{0x7d}), .{ 1, 0x7d });
     // 2 bytes
-    try testing.expectEqual(try parsePayloadLen(&[_]u8{ 0x7e, 0x00, 0x01 }), .{ 3, 0x01 });
-    try testing.expectEqual(try parsePayloadLen(&[_]u8{ 0x7e, 0x00, 0xaa }), .{ 3, 0xaa });
-    try testing.expectEqual(try parsePayloadLen(&[_]u8{ 0x7e, 0x00, 0xff }), .{ 3, 0xff });
-    try testing.expectEqual(try parsePayloadLen(&[_]u8{ 0x7e, 0x01, 0xff }), .{ 3, 0x01ff });
-    try testing.expectEqual(try parsePayloadLen(&[_]u8{ 0x7e, 0x12, 0x34 }), .{ 3, 0x1234 });
+    try testing.expectEqual(try decodePayloadLen(&[_]u8{ 0x7e, 0x00, 0x01 }), .{ 3, 0x01 });
+    try testing.expectEqual(try decodePayloadLen(&[_]u8{ 0x7e, 0x00, 0xaa }), .{ 3, 0xaa });
+    try testing.expectEqual(try decodePayloadLen(&[_]u8{ 0x7e, 0x00, 0xff }), .{ 3, 0xff });
+    try testing.expectEqual(try decodePayloadLen(&[_]u8{ 0x7e, 0x01, 0xff }), .{ 3, 0x01ff });
+    try testing.expectEqual(try decodePayloadLen(&[_]u8{ 0x7e, 0x12, 0x34 }), .{ 3, 0x1234 });
     // 8 bytes
-    try testing.expectEqual(try parsePayloadLen(&[_]u8{ 0x7f, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1 }), .{ 9, 0x1 });
-    try testing.expectEqual(try parsePayloadLen(&[_]u8{ 0x7f, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8 }), .{ 9, 0x0102030405060708 });
+    try testing.expectEqual(try decodePayloadLen(&[_]u8{ 0x7f, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1 }), .{ 9, 0x1 });
+    try testing.expectEqual(try decodePayloadLen(&[_]u8{ 0x7f, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8 }), .{ 9, 0x0102030405060708 });
 
     // insufficent buffer
-    try testing.expectEqual(try parsePayloadLen(&[_]u8{}), .{ -1, 0 });
-    try testing.expectEqual(try parsePayloadLen(&[_]u8{0x7e}), .{ -3, 0 });
-    try testing.expectEqual(try parsePayloadLen(&[_]u8{0x7f}), .{ -9, 0 });
+    try testing.expectEqual(try decodePayloadLen(&[_]u8{}), .{ -1, 0 });
+    try testing.expectEqual(try decodePayloadLen(&[_]u8{0x7e}), .{ -3, 0 });
+    try testing.expectEqual(try decodePayloadLen(&[_]u8{0x7f}), .{ -9, 0 });
 
     // error
-    try testing.expectError(error.WrongPayloadLen, parsePayloadLen(&[_]u8{ 0x7f, 0x80, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8 }));
+    try testing.expectError(error.WrongPayloadLen, decodePayloadLen(&[_]u8{ 0x7f, 0x80, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8 }));
 }
 
-test "parse" {
+test "decode" {
     var hello = [_]u8{ 0x81, 0x05, 0x48, 0x65, 0x6c, 0x6c, 0x6f };
-    var fr = try Frame.parse(&hello);
+    var fr = try Frame.decode(&hello);
     try testing.expectEqual(fr[0], 7);
     const f = fr[1];
     try testing.expectEqual(f.frame_len, 7);
@@ -152,9 +217,9 @@ test "parse" {
     try testing.expectEqualStrings(f.payload, "Hello");
 }
 
-test "parse masked" {
+test "decode masked" {
     var hello = [_]u8{ 0x81, 0x85, 0x37, 0xfa, 0x21, 0x3d, 0x7f, 0x9f, 0x4d, 0x51, 0x58 };
-    var fr = try Frame.parse(&hello);
+    var fr = try Frame.decode(&hello);
     try testing.expectEqual(fr[0], 11);
     var f = fr[1];
     try testing.expectEqual(f.frame_len, 11);
@@ -183,4 +248,29 @@ test "maskUnmask" {
     maskUnmask(&masking_key, &payload);
     try testing.expectEqualSlices(u8, &payload, &[_]u8{ 0x48, 0x65, 0x6c, 0x6c, 0x6f });
     try testing.expectEqualStrings(&payload, "Hello");
+}
+
+test "encode" {
+    var hello = [_]u8{ 0x81, 0x05, 0x48, 0x65, 0x6c, 0x6c, 0x6f };
+    var fr = try Frame.decode(&hello);
+    try testing.expectEqual(fr[0], 7);
+    var f = fr[1];
+    var ef = f.echo();
+
+    var buf: [16]u8 = undefined;
+    var offset = @intCast(usize, ef.encode(&buf));
+
+    var payload = buf[offset - 5 .. offset];
+    maskUnmask(&ef.masking_key, payload);
+    try testing.expectEqualStrings(payload, "Hello");
+
+    // for (buf[0..@intCast(usize, offset)]) |b|
+    //     std.debug.print("{x:0>2} ", .{b});
+    // var close = [_]u8{ 0x88, 0x02, 0x03, 0xe8 };
+    // fr = try Frame.decode(&close);
+    // f = fr[1];
+    // try testing.expectEqual(f.opcode, .close);
+    // ef = f.echo();
+    // offset = @intCast(usize, ef.encode(&buf));
+    // try testing.expectEqualSlices(u8, buf[0..offset], &close);
 }
