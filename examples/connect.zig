@@ -6,7 +6,10 @@ const ws = @import("websocket");
 const http_request_separator = "\r\n\r\n";
 
 pub fn main() !void {
-    const tests = [_]u8{ 1, 2, 3, 4, 5 };
+    const tests = [_]u8{
+        1, 2, 3, 4, 5, 6, 7, 8, // 1.1 text messages
+        9, // 1.2 binary messages
+    };
 
     var buf: [128]u8 = undefined;
     for (tests) |t| {
@@ -18,8 +21,8 @@ pub fn main() !void {
 fn runCase(path: []const u8) !void {
     const client = try tcpConnect();
 
-    var write_buf: [4096]u8 = undefined;
-    var read_buf: [4096]u8 = undefined;
+    var write_buf: [17 * 4096]u8 = undefined;
+    var read_buf: [17 * 4096]u8 = undefined;
     var hs = ws.Handshake.init("127.0.0.1:9001");
 
     _ = try client.write(try hs.request(&write_buf, path), 0);
@@ -54,38 +57,55 @@ fn runCase(path: []const u8) !void {
         if (buf.len > 0) {
             // decode frame
             var rsp = try ws.Frame.decode(buf);
-            if (rsp.required_bytes > 0) unreachable;
-            var frame = rsp.frame.?;
-            var echo_frame = frame.echo();
+            if (rsp.required_bytes == 0) {
+                var frame = rsp.frame.?;
+                var echo_frame = frame.echo();
 
-            // send echo frame
-            const encode_rsp = echo_frame.encode(&write_buf);
-            switch (encode_rsp) {
-                .required_bytes => |rb| {
-                    std.log.err("write buf len: {d}, required: {d}", .{ write_buf.len, rb });
+                // send echo frame
+                const encode_rsp = echo_frame.encode(&write_buf);
+                switch (encode_rsp) {
+                    .required_bytes => |rb| {
+                        std.log.err("write buf len: {d}, required: {d}", .{ write_buf.len, rb });
+                        unreachable;
+                    },
+                    .bytes => |rb| {
+                        _ = try client.write(write_buf[0..rb], 0);
+                    },
+                }
+                // close if recived close frame
+                if (frame.opcode == .close) {
+                    try client.shutdown(.both);
+                    return;
+                }
+                hwm += rsp.bytes;
+                if (hwm < eob) { // there is something more in buf
+                    std.log.debug("{s} continue hwm: {d}, eob: {d}, bytes: {d}", .{ path, hwm, eob, rsp.bytes });
+                    continue;
+                }
+                hwm = 0;
+                eob = 0;
+            } else {
+                if (rsp.required_bytes > read_buf.len) {
+                    // TODO extend read_buffer
                     unreachable;
-                },
-                .bytes => |rb| {
-                    _ = try client.write(write_buf[0..rb], 0);
-                },
+                }
+                //std.log.debug("{s} get more read buf len: {d}, required: {d}", .{ path, buf.len, rsp.required_bytes });
+                if (hwm > 0) { // rewind existing to the read_buffer start
+                    std.log.debug("{s} rewind read_buf to start hwm: {d}, eob: {d}", .{ path, hwm, eob });
+                    std.mem.copy(u8, read_buf[0..], read_buf[hwm..eob]);
+                    eob -= hwm;
+                    hwm = 0;
+                }
             }
-            // close if recived close frame
-            if (frame.opcode == .close) {
-                try client.shutdown(.both);
-                return;
-            }
-            hwm += rsp.bytes;
-            if (hwm < eob) { // there is something more in buf
-                continue;
-            }
+        } else {
+            hwm = 0;
+            eob = 0;
         }
-        hwm = 0;
-        eob = 0;
         const br = try client.read(read_buf[eob..], 0);
         if (br == 0) {
             return;
         }
-        eob = br;
+        eob += br;
     }
 }
 

@@ -51,7 +51,7 @@ pub const Frame = struct {
         const mask_start: usize = 1 + payload_bytes;
         const payload_start: usize = mask_start + if (masked) @intCast(usize, 4) else @intCast(usize, 0);
         const frame_len: usize = payload_start + payload_len;
-        if (buf.len > frame_len) {
+        if (buf.len < frame_len) {
             return .{ .required_bytes = frame_len };
         }
 
