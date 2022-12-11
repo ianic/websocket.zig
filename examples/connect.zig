@@ -5,30 +5,87 @@ const ws = @import("websocket");
 
 const http_request_separator = "\r\n\r\n";
 
+const Group = struct {
+    cases: u8,
+    desc: []const u8,
+
+    pub fn descStartsWith(self: Group, needle: []const u8) bool {
+        return std.ascii.startsWithIgnoreCase(self.desc, needle);
+    }
+};
+
 pub fn main() !void {
-    const tests = [_]u8{
-        // 1, 2, 3, 4, 5, 6, 7, 8, // 1.1 text messages
-        // 9, 10, 11, 12, 13, 14, 15, 16, // 1.2 binary messages
-        // 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, // ping pongs
-        //28, 29, 30, 31, 32, 33, 34, // reserved bits
-        35, 36, 37, 38, 39, // non cotrol opcodes
-        40, 41, 42, 43, 44, // control opcodes
-        //45, // fragmentation -- FAILING
-        65, 66, 67, // utf-8
-        68, 69, 70, 71, // utf-8
-        72, 73, // invalid utf-8 FAILING
-        74, 75, 76, 77, //
-        78, 79, 80, 81, 82, //
+    const tests_groups = [_]Group{
+        // 1 Framing
+        .{ .cases = 8, .desc = "1.1 Text Messages" },
+        .{ .cases = 8, .desc = "1.2 Binary Messages" },
+
+        .{ .cases = 11, .desc = "2 Pings/Pongs" },
+        .{ .cases = 7, .desc = "3 Reserved Bits" },
+        // 4 Opcodes
+        .{ .cases = 5, .desc = "4.1 Non-control Opcodes" },
+        .{ .cases = 5, .desc = "4.2 Control Opcodes" },
+
+        .{ .cases = 20, .desc = "5 Fragmentation" },
+        // 6 UTF-8 Handling
+        .{ .cases = 3, .desc = "6.1 Valid UTF-8 with zero payload fragments" },
+        .{ .cases = 4, .desc = "6.2 Valid UTF-8 unfragmented, fragmented on code-points and within code-points" },
+        .{ .cases = 2, .desc = "6.3 Invalid UTF-8 differently fragmented" },
+        .{ .cases = 4, .desc = "6.4 Fail-fast on invalid UTF-8" },
+        .{ .cases = 5, .desc = "6.5 Some valid UTF-8 sequences" },
+        .{ .cases = 11, .desc = "6.6 All prefixes of a valid UTF-8 string that contains multi-byte code points" },
+        .{ .cases = 4, .desc = "6.7 First possible sequence of a certain length" },
+        .{ .cases = 2, .desc = "6.8 First possible sequence length 5/6 (invalid codepoints)" },
+        .{ .cases = 4, .desc = "6.9 Last possible sequence of a certain length" },
+        .{ .cases = 3, .desc = "6.10 Last possible sequence length 4/5/6 (invalid codepoints)" },
+        .{ .cases = 5, .desc = "6.11 Other boundary conditions" },
+        .{ .cases = 8, .desc = "6.12 Unexpected continuation bytes" },
+        .{ .cases = 5, .desc = "6.13 Lonely start characters" },
+        .{ .cases = 10, .desc = "6.14 Sequences with last continuation byte missing" },
+        .{ .cases = 1, .desc = "6.15 Concatenation of incomplete sequences" },
+        .{ .cases = 3, .desc = "6.16 Impossible bytes" },
+        .{ .cases = 5, .desc = "6.17 Examples of an overlong ASCII characte" },
+        .{ .cases = 5, .desc = "6.18 Maximum overlong sequences" },
+        .{ .cases = 5, .desc = "6.19 Overlong representation of the NUL character" },
+        .{ .cases = 7, .desc = "6.20 Single UTF-16 surrogates" },
+        .{ .cases = 8, .desc = "6.21 Paired UTF-16 surrogates" },
+        .{ .cases = 34, .desc = "6.22 Non-character code points (valid UTF-8)" },
+        .{ .cases = 7, .desc = "6.23 Unicode specials (i.e. replacement char)" },
+        // 7 Close Handling
+        .{ .cases = 6, .desc = "7.1 Basic close behavior (fuzzer initiated)" },
+        .{ .cases = 6, .desc = "7.3 Close frame structure: payload length (fuzzer initiated)" },
+        .{ .cases = 1, .desc = "7.5 Close frame structure: payload value (fuzzer initiated)" },
+        .{ .cases = 13, .desc = "7.7 Close frame structure: valid close codes (fuzzer initiated)" },
+        .{ .cases = 9, .desc = "7.9 Close frame structure: invalid close codes (fuzzer initiated)" },
+        .{ .cases = 2, .desc = "7.13 Informational close information (fuzzer initiated)" },
+        // 9 Limits/Performance
+        // 10 Misc
+        // 12 WebSocket Compression (different payloads)
+        // 13 WebSocket Compression (different parameters)
     };
 
-    var buf: [128]u8 = undefined;
-    for (tests) |t| {
-        const path = try std.fmt.bufPrint(&buf, "/runCase?case={d}&agent=websocket.zig", .{t});
-        try runCase(path);
+    var case_no: usize = 0;
+    for (tests_groups) |group| {
+        var group_case: usize = 0;
+        while (group_case < group.cases) : (group_case += 1) {
+            case_no += 1;
+            // if (group.descStartsWith("6.") or
+            //     group.descStartsWith("7.") or
+            //     group.descStartsWith("5"))
+            //     continue;
+            if (!group.descStartsWith(5)) {
+                continue;
+            }
+            std.log.debug("running case no: {d} {s} {d} ", .{ case_no, group.desc, group_case + 1 });
+            try runCase(case_no);
+        }
     }
 }
 
-fn runCase(path: []const u8) !void {
+fn runCase(case_no: usize) !void {
+    var path_buf: [128]u8 = undefined;
+    const path = try std.fmt.bufPrint(&path_buf, "/runCase?case={d}&agent=websocket.zig", .{case_no});
+
     const client = try tcpConnect();
 
     var write_buf: [17 * 4096]u8 = undefined;
@@ -94,7 +151,7 @@ fn runCase(path: []const u8) !void {
                 }
                 hwm += rsp.bytes;
                 if (hwm < eob) { // there is something more in buf
-                    std.log.debug("{s} continue hwm: {d}, eob: {d}, bytes: {d}", .{ path, hwm, eob, rsp.bytes });
+                    //std.log.debug("{d} continue hwm: {d}, eob: {d}, bytes: {d}", .{ case_no, hwm, eob, rsp.bytes });
                     continue;
                 }
                 hwm = 0;
@@ -106,7 +163,7 @@ fn runCase(path: []const u8) !void {
                 }
                 //std.log.debug("{s} get more read buf len: {d}, required: {d}", .{ path, buf.len, rsp.required_bytes });
                 if (hwm > 0) { // rewind existing to the read_buffer start
-                    std.log.debug("{s} rewind read_buf to start hwm: {d}, eob: {d}", .{ path, hwm, eob });
+                    //std.log.debug("{d} rewind read_buf to start hwm: {d}, eob: {d}", .{ case_no, hwm, eob });
                     std.mem.copy(u8, read_buf[0..], read_buf[hwm..eob]);
                     eob -= hwm;
                     hwm = 0;
