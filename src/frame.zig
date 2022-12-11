@@ -24,6 +24,10 @@ pub const Frame = struct {
         close = 8,
         ping = 9,
         pong = 0xa,
+
+        pub fn isControl(o: Opcode) bool {
+            return o == .close or o == .ping or o == .pong;
+        }
     };
 
     const Self = @This();
@@ -55,13 +59,25 @@ pub const Frame = struct {
             return .{ .required_bytes = frame_len };
         }
 
+        const opcode = try getOpcode(@intCast(u4, buf[0] & 0x0f));
+        if (opcode.isControl() and payload_bytes != 1) {
+            return error.WrongPayloadForControlOpcode;
+        }
+
+        const fin = if (buf[0] & 0x80 == 0x80) U1_1 else U1_0;
+        const rsv1 = if (buf[0] & 0x40 == 0x40) U1_1 else U1_0;
+        const rsv2 = if (buf[0] & 0x20 == 0x20) U1_1 else U1_0;
+        const rsv3 = if (buf[0] & 0x10 == 0x10) U1_1 else U1_0;
+        if (rsv1 != 0 or rsv2 != 0 or rsv3 != 0)
+            return error.WrongRsv;
+
         var f = Frame{
             // TODO
-            .fin = if (buf[0] & 0x80 == 0x80) U1_1 else U1_0,
-            .rsv1 = if (buf[0] & 0x40 == 0x40) U1_1 else U1_0,
-            .rsv2 = if (buf[0] & 0x20 == 0x20) U1_1 else U1_0,
-            .rsv3 = if (buf[0] & 0x10 == 0x10) U1_1 else U1_0,
-            .opcode = try getOpcode(@intCast(u4, buf[0] & 0x0f)),
+            .fin = fin,
+            .rsv1 = rsv1,
+            .rsv2 = rsv2,
+            .rsv3 = rsv3,
+            .opcode = opcode,
             .mask = if (masked) U1_1 else U1_0,
             .payload = buf[payload_start..frame_len],
             .frame_len = frame_len,
@@ -104,8 +120,11 @@ pub const Frame = struct {
             .payload = self.payload,
             .frame_len = self.frame_len,
         };
-        if (f.opcode != .ping and f.opcode != .pong)
-            f.setMaskingKey();
+        if (f.opcode == .ping) {
+            f.opcode = .pong;
+        }
+        //if (f.opcode != .ping and f.opcode != .pong)
+        f.setMaskingKey();
         return f;
     }
 

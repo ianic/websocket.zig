@@ -7,8 +7,18 @@ const http_request_separator = "\r\n\r\n";
 
 pub fn main() !void {
     const tests = [_]u8{
-        1, 2, 3, 4, 5, 6, 7, 8, // 1.1 text messages
-        9, // 1.2 binary messages
+        // 1, 2, 3, 4, 5, 6, 7, 8, // 1.1 text messages
+        // 9, 10, 11, 12, 13, 14, 15, 16, // 1.2 binary messages
+        // 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, // ping pongs
+        //28, 29, 30, 31, 32, 33, 34, // reserved bits
+        35, 36, 37, 38, 39, // non cotrol opcodes
+        40, 41, 42, 43, 44, // control opcodes
+        //45, // fragmentation -- FAILING
+        65, 66, 67, // utf-8
+        68, 69, 70, 71, // utf-8
+        72, 73, // invalid utf-8 FAILING
+        74, 75, 76, 77, //
+        78, 79, 80, 81, 82, //
     };
 
     var buf: [128]u8 = undefined;
@@ -56,21 +66,26 @@ fn runCase(path: []const u8) !void {
         const buf = read_buf[hwm..eob];
         if (buf.len > 0) {
             // decode frame
-            var rsp = try ws.Frame.decode(buf);
+            var rsp = ws.Frame.decode(buf) catch {
+                try client.shutdown(.both);
+                return;
+            };
             if (rsp.required_bytes == 0) {
                 var frame = rsp.frame.?;
                 var echo_frame = frame.echo();
-
-                // send echo frame
-                const encode_rsp = echo_frame.encode(&write_buf);
-                switch (encode_rsp) {
-                    .required_bytes => |rb| {
-                        std.log.err("write buf len: {d}, required: {d}", .{ write_buf.len, rb });
-                        unreachable;
-                    },
-                    .bytes => |rb| {
-                        _ = try client.write(write_buf[0..rb], 0);
-                    },
+                //std.debug.print("{}\n", .{frame});
+                if (frame.opcode != .pong) {
+                    // send echo frame
+                    const encode_rsp = echo_frame.encode(&write_buf);
+                    switch (encode_rsp) {
+                        .required_bytes => |rb| {
+                            std.log.err("write buf len: {d}, required: {d}", .{ write_buf.len, rb });
+                            unreachable;
+                        },
+                        .bytes => |rb| {
+                            _ = try client.write(write_buf[0..rb], 0);
+                        },
+                    }
                 }
                 // close if recived close frame
                 if (frame.opcode == .close) {
