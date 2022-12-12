@@ -73,146 +73,171 @@ pub fn main() !void {
             //     group.descStartsWith("7.") or
             //     group.descStartsWith("5"))
             //     continue;
-            if (!group.descStartsWith("6")) {
+            if (!group.descStartsWith("1")) {
                 continue;
             }
             // if (case_no != 210) {
             //     continue;
             // }
             std.log.debug("running case no: {d} {s} {d} ", .{ case_no, group.desc, group_case + 1 });
-            try runCase(case_no);
+            var runner = try Runner.init("127.0.0.1", 9001, case_no);
+            try runner.echoLoop();
         }
     }
 }
 
-fn runCase(case_no: usize) !void {
-    var path_buf: [128]u8 = undefined;
-    const path = try std.fmt.bufPrint(&path_buf, "/runCase?case={d}&agent=websocket.zig", .{case_no});
+const Runner = struct {
+    client: tcp.Client,
 
-    const client = try tcpConnect();
+    write_buf: [17 * 4096]u8 = undefined,
+    read_buf: [17 * 4096]u8 = undefined,
+    hwm: usize = 0,
+    eob: usize = 0,
 
-    var write_buf: [17 * 4096]u8 = undefined;
-    var read_buf: [17 * 4096]u8 = undefined;
-    var hs = ws.Handshake.init("127.0.0.1:9001");
-
-    _ = try client.write(try hs.request(&write_buf, path), 0);
-    var hwm: usize = 0;
-    var eob: usize = 0;
-
-    // handshake
-    while (true) {
-        const br = try client.read(read_buf[eob..], 0);
-        if (br == 0) {
-            return;
-        }
-        eob += br;
-        const buf = read_buf[0..eob];
-        var eor = std.mem.indexOf(u8, buf, http_request_separator) orelse 0;
-        if (eor == 0) {
-            continue;
-        }
-        eor += http_request_separator.len;
-        const rsp_buf = read_buf[0..eor];
-        if (!hs.isValidResponse(rsp_buf)) {
-            try client.shutdown(.both);
-            return;
-        }
-        hwm = eor;
-        break;
+    const Self = @This();
+    pub fn init(host: []const u8, port: u16, case_no: usize) !Self {
+        var r = Self{
+            .client = try Runner.tcpConnect(host, port),
+        };
+        try r.wsHandshake(host, port, case_no);
+        return r;
     }
 
-    var last_frame_fragmentation: ws.Frame.Fragment = .unfragmented;
+    fn wsHandshake(self: *Self, host: []const u8, port: u16, case_no: usize) !void {
+        const host_header = try std.fmt.bufPrint(self.write_buf[0..], "{s}:{d}", .{ host, port });
+        var offset: usize = host_header.len;
+        const path = try std.fmt.bufPrint(self.write_buf[offset..], "/runCase?case={d}&agent=test.zig", .{case_no});
+        offset += path.len;
+        var hs = ws.Handshake.init("127.0.0.1:9001");
+        _ = try self.client.write(try hs.request(self.write_buf[offset..], path), 0);
 
-    // reading messages
-    while (true) {
-        const buf = read_buf[hwm..eob];
-        if (buf.len > 0) {
-            // decode frame
-            var rsp = ws.Frame.decode(buf) catch {
-                try client.shutdown(.both);
-                return;
-            };
-            //showBuf(buf);
+        // handshake
+        while (true) {
+            const br = try self.client.read(self.read_buf[self.eob..], 0);
+            if (br == 0) {
+                return error.ConnectionClosed;
+            }
+            self.eob += br;
+            const buf = self.read_buf[0..self.eob];
+            var eor = std.mem.indexOf(u8, buf, http_request_separator) orelse 0; // eor = end of request
+            if (eor == 0) {
+                continue; // read more
+            }
+            eor += http_request_separator.len;
+            const rsp_buf = self.read_buf[0..eor];
+            if (!hs.isValidResponse(rsp_buf)) {
+                self.tcpShutdown();
+                return error.IvalidHandshakeResponse;
+            }
+            self.hwm = eor;
+            break; // fine
+        }
+    }
 
-            if (rsp.required_bytes == 0) {
-                var frame = rsp.frame.?;
-                //std.debug.print("frame fragmentation: {}\n", .{frame.fragmentation()});
-                if (!frame.isValidContinuation(last_frame_fragmentation)) {
-                    // close connection
-                    client.shutdown(.both) catch {};
+    fn echoLoop(self: *Self) !void {
+        var read_buf = self.read_buf;
+        var write_buf = self.write_buf;
+        var hwm = self.hwm;
+        var eob = self.eob;
+
+        var last_frame_fragmentation: ws.Frame.Fragment = .unfragmented;
+
+        defer self.tcpShutdown();
+
+        // reading messages
+        while (true) {
+            const buf = read_buf[hwm..eob];
+            if (buf.len > 0) {
+                // decode frame
+                var rsp = ws.Frame.decode(buf) catch {
                     return;
-                }
+                };
+                //showBuf(buf);
 
-                if (!frame.isControl()) {
-                    last_frame_fragmentation = frame.fragmentation();
-                }
-                // create and write echo frame
-                var echo_frame = frame.echo();
-                if (frame.opcode != .pong) {
-                    // send echo frame
-                    const encode_rsp = echo_frame.encode(&write_buf);
-                    switch (encode_rsp) {
-                        .required_bytes => |rb| {
-                            std.log.err("write buf len: {d}, required: {d}", .{ write_buf.len, rb });
-                            unreachable;
-                        },
-                        .bytes => |rb| {
-                            _ = try client.write(write_buf[0..rb], 0);
-                        },
+                if (rsp.required_bytes == 0) {
+                    var frame = rsp.frame.?;
+                    //std.debug.print("frame fragmentation: {}\n", .{frame.fragmentation()});
+                    if (!frame.isValidContinuation(last_frame_fragmentation)) {
+                        // close connection
+                        return;
+                    }
+
+                    if (!frame.isControl()) {
+                        last_frame_fragmentation = frame.fragmentation();
+                    }
+                    // create and write echo frame
+                    var echo_frame = frame.echo();
+                    if (frame.opcode != .pong) {
+                        // send echo frame
+                        const encode_rsp = echo_frame.encode(&write_buf);
+                        switch (encode_rsp) {
+                            .required_bytes => |rb| {
+                                std.log.err("write buf len: {d}, required: {d}", .{ write_buf.len, rb });
+                                unreachable;
+                            },
+                            .bytes => |rb| {
+                                try self.send(write_buf[0..rb]);
+                            },
+                        }
+                    }
+                    // close if recived close frame
+                    if (frame.opcode == .close) {
+                        return;
+                    }
+                    hwm += rsp.bytes;
+                    if (hwm < eob) { // there is something more in buf
+                        //std.log.debug("{d} continue hwm: {d}, eob: {d}, bytes: {d}", .{ case_no, hwm, eob, rsp.bytes });
+                        continue;
+                    }
+                    hwm = 0;
+                    eob = 0;
+                } else {
+                    if (rsp.required_bytes > read_buf.len) {
+                        std.log.err("read buffer overflow required: {d}, current: {d}", .{ rsp.required_bytes, read_buf.len });
+                        // TODO extend read_buffer
+                        return;
+                        //unreachable;
+                    }
+                    //std.log.debug("{s} get more read buf len: {d}, required: {d}", .{ path, buf.len, rsp.required_bytes });
+                    if (hwm > 0) { // rewind existing to the read_buffer start
+                        //std.log.debug("{d} rewind read_buf to start hwm: {d}, eob: {d}", .{ case_no, hwm, eob });
+                        std.mem.copy(u8, read_buf[0..], read_buf[hwm..eob]);
+                        eob -= hwm;
+                        hwm = 0;
                     }
                 }
-                // close if recived close frame
-                if (frame.opcode == .close) {
-                    client.shutdown(.both) catch {};
-                    return;
-                }
-                hwm += rsp.bytes;
-                if (hwm < eob) { // there is something more in buf
-                    //std.log.debug("{d} continue hwm: {d}, eob: {d}, bytes: {d}", .{ case_no, hwm, eob, rsp.bytes });
-                    continue;
-                }
+            } else {
                 hwm = 0;
                 eob = 0;
-            } else {
-                if (rsp.required_bytes > read_buf.len) {
-                    std.log.err("{d} read buffer overflow required: {d}, current: {d}", .{ case_no, rsp.required_bytes, read_buf.len });
-                    // TODO extend read_buffer
-                    client.shutdown(.both) catch {};
-                    return;
-                    //unreachable;
-                }
-                //std.log.debug("{s} get more read buf len: {d}, required: {d}", .{ path, buf.len, rsp.required_bytes });
-                if (hwm > 0) { // rewind existing to the read_buffer start
-                    //std.log.debug("{d} rewind read_buf to start hwm: {d}, eob: {d}", .{ case_no, hwm, eob });
-                    std.mem.copy(u8, read_buf[0..], read_buf[hwm..eob]);
-                    eob -= hwm;
-                    hwm = 0;
-                }
             }
-        } else {
-            hwm = 0;
-            eob = 0;
+            const br = try self.client.read(read_buf[eob..], 0);
+            if (br == 0) {
+                return;
+            }
+            eob += br;
         }
-        const br = try client.read(read_buf[eob..], 0);
-        if (br == 0) {
-            return;
-        }
-        eob += br;
     }
-}
+
+    fn send(self: *Self, buf: []const u8) !void {
+        // TODO: handle partial buffer send
+        _ = try self.client.write(buf, 0);
+    }
+
+    fn tcpShutdown(self: *Self) void {
+        self.client.shutdown(.both) catch {};
+    }
+
+    fn tcpConnect(host: []const u8, port: u16) !tcp.Client {
+        const addr = net.ip.Address.initIPv4(try std.x.os.IPv4.parse(host), port);
+        const client = try tcp.Client.init(.ip, .{ .close_on_exec = true });
+        try client.connect(addr);
+        errdefer client.deinit();
+        return client;
+    }
+};
 
 fn showBuf(buf: []const u8) void {
     std.debug.print("\n", .{});
     for (buf) |b|
         std.debug.print("0x{x:0>2}, ", .{b});
 }
-
-fn tcpConnect() !tcp.Client {
-    const addr = net.ip.Address.initIPv4(try std.x.os.IPv4.parse("127.0.0.1"), 9001);
-    const client = try tcp.Client.init(.ip, .{ .close_on_exec = true });
-    try client.connect(addr);
-    errdefer client.deinit();
-    return client;
-}
-
-const upgrade_request = "GET ws://127.0.0.1:9001/runCase?case=3&agent=Chrome/105.0.0.0 HTTP/1.1\r\nHost: 127.0.0.1:9001\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nOrigin: http://example.com\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Protocol: chat, superchat\r\nSec-WebSocket-Version: 13\r\n\r\n";
