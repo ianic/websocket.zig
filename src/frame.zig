@@ -37,6 +37,10 @@ pub const Frame = struct {
         required_bytes: usize = 0,
         bytes: usize = 0,
         frame: ?Frame = null,
+
+        pub fn isValid(self: DecodeResult) bool {
+            return self.required_bytes == 0;
+        }
     };
 
     pub fn decode(buf: []u8) !DecodeResult {

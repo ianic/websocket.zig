@@ -73,15 +73,17 @@ pub fn main() !void {
             //     group.descStartsWith("7.") or
             //     group.descStartsWith("5"))
             //     continue;
-            if (!group.descStartsWith("1")) {
-                continue;
-            }
+            // if (!group.descStartsWith("1")) {
+            //     continue;
+            // }
             // if (case_no != 210) {
             //     continue;
             // }
             std.log.debug("running case no: {d} {s} {d} ", .{ case_no, group.desc, group_case + 1 });
             var runner = try Runner.init("127.0.0.1", 9001, case_no);
-            try runner.echoLoop();
+            runner.echoLoop() catch |err| {
+                std.log.err("error: {}", .{err});
+            };
         }
     }
 }
@@ -93,6 +95,8 @@ const Runner = struct {
     read_buf: [17 * 4096]u8 = undefined,
     hwm: usize = 0,
     eob: usize = 0,
+
+    last_frame_fragmentation: ws.Frame.Fragment = .unfragmented,
 
     const Self = @This();
     pub fn init(host: []const u8, port: u16, case_no: usize) !Self {
@@ -135,92 +139,82 @@ const Runner = struct {
     }
 
     fn echoLoop(self: *Self) !void {
-        var read_buf = self.read_buf;
-        var write_buf = self.write_buf;
-        var hwm = self.hwm;
-        var eob = self.eob;
-
-        var last_frame_fragmentation: ws.Frame.Fragment = .unfragmented;
-
         defer self.tcpShutdown();
-
-        // reading messages
         while (true) {
-            const buf = read_buf[hwm..eob];
-            if (buf.len > 0) {
-                // decode frame
-                var rsp = ws.Frame.decode(buf) catch {
-                    return;
-                };
-                //showBuf(buf);
-
-                if (rsp.required_bytes == 0) {
+            if (!self.readBufEmpty()) {
+                var rsp = try ws.Frame.decode(self.read_buf[self.hwm..self.eob]);
+                if (rsp.isValid()) {
                     var frame = rsp.frame.?;
-                    //std.debug.print("frame fragmentation: {}\n", .{frame.fragmentation()});
-                    if (!frame.isValidContinuation(last_frame_fragmentation)) {
-                        // close connection
-                        return;
-                    }
+                    try self.assertValidContinutation(&frame);
 
-                    if (!frame.isControl()) {
-                        last_frame_fragmentation = frame.fragmentation();
-                    }
-                    // create and write echo frame
-                    var echo_frame = frame.echo();
-                    if (frame.opcode != .pong) {
-                        // send echo frame
-                        const encode_rsp = echo_frame.encode(&write_buf);
-                        switch (encode_rsp) {
-                            .required_bytes => |rb| {
-                                std.log.err("write buf len: {d}, required: {d}", .{ write_buf.len, rb });
-                                unreachable;
-                            },
-                            .bytes => |rb| {
-                                try self.send(write_buf[0..rb]);
-                            },
-                        }
-                    }
-                    // close if recived close frame
-                    if (frame.opcode == .close) {
-                        return;
-                    }
-                    hwm += rsp.bytes;
-                    if (hwm < eob) { // there is something more in buf
-                        //std.log.debug("{d} continue hwm: {d}, eob: {d}, bytes: {d}", .{ case_no, hwm, eob, rsp.bytes });
-                        continue;
-                    }
-                    hwm = 0;
-                    eob = 0;
-                } else {
-                    if (rsp.required_bytes > read_buf.len) {
-                        std.log.err("read buffer overflow required: {d}, current: {d}", .{ rsp.required_bytes, read_buf.len });
+                    try self.sendEcho(&frame); // create and write echo frame
+                    if (frame.opcode == .close) return; // recived close frame
+
+                    self.hwm += rsp.bytes; // move hwm for consumed bytes
+                    continue;
+                } else { // not enough bytes in read_buf to decode frame
+                    if (rsp.required_bytes > self.read_buf.len) {
+                        std.log.err("read buffer overflow required: {d}, current: {d}", .{ rsp.required_bytes, self.read_buf.len });
                         // TODO extend read_buffer
-                        return;
-                        //unreachable;
+                        // TODO send close with too big message close status code
+                        return error.ReadBufferOverflow;
                     }
-                    //std.log.debug("{s} get more read buf len: {d}, required: {d}", .{ path, buf.len, rsp.required_bytes });
-                    if (hwm > 0) { // rewind existing to the read_buffer start
-                        //std.log.debug("{d} rewind read_buf to start hwm: {d}, eob: {d}", .{ case_no, hwm, eob });
-                        std.mem.copy(u8, read_buf[0..], read_buf[hwm..eob]);
-                        eob -= hwm;
-                        hwm = 0;
-                    }
+                    self.shrinkReadBuf();
                 }
-            } else {
-                hwm = 0;
-                eob = 0;
             }
-            const br = try self.client.read(read_buf[eob..], 0);
-            if (br == 0) {
-                return;
-            }
-            eob += br;
+            try self.read();
+        }
+    }
+
+    fn readBufEmpty(self: *Self) bool {
+        return self.hwm == self.eob;
+    }
+
+    fn read(self: *Self) !void {
+        if (self.readBufEmpty() and self.hwm != 0) {
+            // move to the start of read buf
+            self.hwm = 0;
+            self.eob = 0;
+        }
+        const bytes_read = try self.client.read(self.read_buf[self.eob..], 0);
+        if (bytes_read == 0) return error.ConnectionClosed;
+        self.eob += bytes_read;
+    }
+
+    fn shrinkReadBuf(self: *Self) void {
+        if (self.hwm == 0) return;
+        //std.log.debug("{d} rewind read_buf to start hwm: {d}, eob: {d}", .{ case_no, hwm, eob });
+        std.mem.copy(u8, self.read_buf[0..], self.read_buf[self.hwm..self.eob]);
+        self.eob -= self.hwm;
+        self.hwm = 0;
+    }
+
+    fn assertValidContinutation(self: *Self, frame: *ws.Frame) !void {
+        if (!frame.isValidContinuation(self.last_frame_fragmentation)) return error.InvalidFragmentation;
+        if (!frame.isControl()) self.last_frame_fragmentation = frame.fragmentation();
+    }
+
+    fn sendEcho(self: *Self, frame: *ws.Frame) !void {
+        if (frame.opcode == .pong) return;
+
+        // send echo frame
+        var echo_frame = frame.echo();
+        const encode_rsp = echo_frame.encode(&self.write_buf);
+        switch (encode_rsp) {
+            .required_bytes => |rb| {
+                std.log.err("write buf len: {d}, required: {d}", .{ self.write_buf.len, rb });
+                unreachable;
+            },
+            .bytes => |rb| {
+                try self.send(self.write_buf[0..rb]);
+            },
         }
     }
 
     fn send(self: *Self, buf: []const u8) !void {
-        // TODO: handle partial buffer send
-        _ = try self.client.write(buf, 0);
+        var bytes_written: usize = 0;
+        while (bytes_written < buf.len)
+            bytes_written += try self.client.write(buf, 0);
     }
 
     fn tcpShutdown(self: *Self) void {
