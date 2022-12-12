@@ -93,7 +93,9 @@ pub const Frame = struct {
             f.masking_key[3] = buf[mask_start + 3];
             f.unmaskPayload();
         }
-        try f.assertValidUtf8Payload();
+        if (opcode == .text)
+            try f.assertValidUtf8Payload();
+
         return .{ .bytes = frame_len, .frame = f };
     }
 
