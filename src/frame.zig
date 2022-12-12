@@ -73,6 +73,7 @@ pub const Frame = struct {
             if (fin == 0)
                 return error.FragmentedControlFrame;
         }
+        const payload = buf[payload_start..frame_len];
 
         var f = Frame{
             // TODO
@@ -82,7 +83,7 @@ pub const Frame = struct {
             .rsv3 = rsv3,
             .opcode = opcode,
             .mask = if (masked) U1_1 else U1_0,
-            .payload = buf[payload_start..frame_len],
+            .payload = payload,
             .frame_len = frame_len,
         };
         if (masked) {
@@ -90,7 +91,9 @@ pub const Frame = struct {
             f.masking_key[1] = buf[mask_start + 1];
             f.masking_key[2] = buf[mask_start + 2];
             f.masking_key[3] = buf[mask_start + 3];
+            f.unmaskPayload();
         }
+        try f.assertValidUtf8Payload();
         return .{ .bytes = frame_len, .frame = f };
     }
 
@@ -125,6 +128,11 @@ pub const Frame = struct {
         };
         if (f.opcode == .ping) {
             f.opcode = .pong;
+        }
+        if (f.opcode == .close and !self.isValidCloseCode() and self.payload.len >= 2) {
+            // set close code to 1002 (protocol error) when received invalid close code
+            self.payload[0] = 0x3;
+            self.payload[1] = 0xea;
         }
         //if (f.opcode != .ping and f.opcode != .pong)
         f.setMaskingKey();
@@ -214,6 +222,32 @@ pub const Frame = struct {
             .start, .fragment => curr == .fragment or curr == .end,
         };
     }
+
+    pub fn closeCode(self: Self) u16 {
+        if (self.opcode != .close) return 0;
+        if (self.payload.len < 2) return 1000;
+        return std.mem.readIntBig(u16, self.payload[0..2]);
+    }
+
+    pub fn isValidCloseCode(self: Self) bool {
+        return switch (self.closeCode()) {
+            1000...1003 => true,
+            1007...1011 => true,
+            3000...3999 => true,
+            4000...4999 => true,
+            else => false,
+        };
+    }
+
+    fn assertValidUtf8Payload(self: Self) !void {
+        if (self.payload.len == 0) return;
+        var utf8Payload = self.payload;
+        if (self.opcode == .close) {
+            if (self.payload.len <= 2) return;
+            utf8Payload = self.payload[2..];
+        }
+        if (!std.unicode.utf8ValidateSlice(utf8Payload)) return error.InvalidUtf8Payload;
+    }
 };
 
 fn payloadBytes(len: u64) u8 {
@@ -248,6 +282,7 @@ fn decodePayloadLen(buf: []const u8) !DecodePayloadLenResult {
     if (buf[1] & 0x80 == 0x80) {
         return error.WrongPayloadLen;
     }
+    // TODO: there must be std fn for this
     pl = (@intCast(u64, buf[1]) << 56) +
         (@intCast(u64, buf[2]) << 48) +
         (@intCast(u64, buf[3]) << 40) +
@@ -313,7 +348,7 @@ test "decode masked" {
     try testing.expectEqual(f.mask, 1);
     try testing.expectEqual(f.masking_key.len, 4);
     try testing.expectEqual(f.payload.len, 5);
-    f.unmaskPayload();
+    //f.unmaskPayload();
     try testing.expectEqualStrings(f.payload, "Hello");
 }
 
@@ -357,12 +392,24 @@ test "encode" {
     // try testing.expectEqualSlices(u8, buf[0..offset], &close);
 }
 
-// test {
-//     const x: u32 = 0xabcd;
-//     //const buf = std.mem.toBytes(x);
-//     var buf: [8]u8 = undefined;
-//     std.mem.writeInt(u64, &buf, x, .Big);
+test "close status codes" {
+    var buf = [_]u8{ 0x88, 0x02, 0x03, 0xe8 };
+    var rsp = try Frame.decode(&buf);
+    var f = rsp.frame.?;
+    try testing.expectEqual(f.opcode, .close);
+    try testing.expectEqual(f.closeCode(), 1000);
+    try testing.expectEqual(f.closeCode(), 0x03e8);
 
-//     for (&buf) |b|
-//         std.debug.print("{x:0>2} ", .{b});
-// }
+    buf = [_]u8{ 0x88, 0x02, 0x03, 0xe9 };
+    rsp = try Frame.decode(&buf);
+    f = rsp.frame.?;
+    try testing.expectEqual(f.opcode, .close);
+    try testing.expectEqual(f.closeCode(), 1001);
+    try testing.expectEqual(f.closeCode(), 0x03e9);
+
+    var close_without_status_code = [_]u8{ 0x88, 0x00 };
+    rsp = try Frame.decode(&close_without_status_code);
+    f = rsp.frame.?;
+    try testing.expectEqual(f.opcode, .close);
+    try testing.expectEqual(f.closeCode(), 1000);
+}

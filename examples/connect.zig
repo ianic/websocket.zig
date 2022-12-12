@@ -73,10 +73,10 @@ pub fn main() !void {
             //     group.descStartsWith("7.") or
             //     group.descStartsWith("5"))
             //     continue;
-            if (!group.descStartsWith("7.1")) {
+            if (!group.descStartsWith("6")) {
                 continue;
             }
-            // if (case_no != 54) {
+            // if (case_no != 210) {
             //     continue;
             // }
             std.log.debug("running case no: {d} {s} {d} ", .{ case_no, group.desc, group_case + 1 });
@@ -132,9 +132,11 @@ fn runCase(case_no: usize) !void {
                 try client.shutdown(.both);
                 return;
             };
+            //showBuf(buf);
+
             if (rsp.required_bytes == 0) {
                 var frame = rsp.frame.?;
-                std.debug.print("frame fragmentation: {}\n", .{frame.fragmentation()});
+                //std.debug.print("frame fragmentation: {}\n", .{frame.fragmentation()});
                 if (!frame.isValidContinuation(last_frame_fragmentation)) {
                     // close connection
                     client.shutdown(.both) catch {};
@@ -173,8 +175,11 @@ fn runCase(case_no: usize) !void {
                 eob = 0;
             } else {
                 if (rsp.required_bytes > read_buf.len) {
+                    std.log.err("{d} read buffer overflow required: {d}, current: {d}", .{ case_no, rsp.required_bytes, read_buf.len });
                     // TODO extend read_buffer
-                    unreachable;
+                    client.shutdown(.both) catch {};
+                    return;
+                    //unreachable;
                 }
                 //std.log.debug("{s} get more read buf len: {d}, required: {d}", .{ path, buf.len, rsp.required_bytes });
                 if (hwm > 0) { // rewind existing to the read_buffer start
@@ -199,7 +204,7 @@ fn runCase(case_no: usize) !void {
 fn showBuf(buf: []const u8) void {
     std.debug.print("\n", .{});
     for (buf) |b|
-        std.debug.print("{x:0>2} ", .{b});
+        std.debug.print("0x{x:0>2}, ", .{b});
 }
 
 fn tcpConnect() !tcp.Client {
