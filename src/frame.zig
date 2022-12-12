@@ -59,17 +59,20 @@ pub const Frame = struct {
             return .{ .required_bytes = frame_len };
         }
 
-        const opcode = try getOpcode(@intCast(u4, buf[0] & 0x0f));
-        if (opcode.isControl() and payload_bytes != 1) {
-            return error.WrongPayloadForControlOpcode;
-        }
-
         const fin = if (buf[0] & 0x80 == 0x80) U1_1 else U1_0;
         const rsv1 = if (buf[0] & 0x40 == 0x40) U1_1 else U1_0;
         const rsv2 = if (buf[0] & 0x20 == 0x20) U1_1 else U1_0;
         const rsv3 = if (buf[0] & 0x10 == 0x10) U1_1 else U1_0;
         if (rsv1 != 0 or rsv2 != 0 or rsv3 != 0)
             return error.WrongRsv;
+
+        const opcode = try getOpcode(@intCast(u4, buf[0] & 0x0f));
+        if (opcode.isControl()) {
+            if (payload_bytes != 1)
+                return error.WrongPayloadForControlOpcode;
+            if (fin == 0)
+                return error.FragmentedControlFrame;
+        }
 
         var f = Frame{
             // TODO
@@ -178,6 +181,38 @@ pub const Frame = struct {
     fn setMaskingKey(self: *Self) void {
         self.mask = 1;
         rnd.random().bytes(&self.masking_key);
+    }
+
+    pub fn fragmentation(self: Self) Fragment {
+        if (self.fin == 1) {
+            if (self.opcode == .continuation) return .end else return .unfragmented;
+        } else {
+            if (self.opcode == .continuation) return .fragment else return .start;
+        }
+    }
+
+    pub const Fragment = enum {
+        unfragmented,
+        start,
+        fragment,
+        end,
+    };
+
+    pub fn isControl(self: Self) bool {
+        return self.opcode.isControl();
+    }
+
+    pub fn isData(self: Self) bool {
+        return !self.isControl();
+    }
+
+    pub fn isValidContinuation(self: Self, prev: Fragment) bool {
+        if (self.isControl()) return true;
+        const curr = self.fragmentation();
+        return switch (prev) {
+            .unfragmented, .end => curr == .unfragmented or curr == .start,
+            .start, .fragment => curr == .fragment or curr == .end,
+        };
     }
 };
 

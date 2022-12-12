@@ -73,9 +73,12 @@ pub fn main() !void {
             //     group.descStartsWith("7.") or
             //     group.descStartsWith("5"))
             //     continue;
-            if (!group.descStartsWith(5)) {
+            if (!group.descStartsWith("7.1")) {
                 continue;
             }
+            // if (case_no != 54) {
+            //     continue;
+            // }
             std.log.debug("running case no: {d} {s} {d} ", .{ case_no, group.desc, group_case + 1 });
             try runCase(case_no);
         }
@@ -118,6 +121,8 @@ fn runCase(case_no: usize) !void {
         break;
     }
 
+    var last_frame_fragmentation: ws.Frame.Fragment = .unfragmented;
+
     // reading messages
     while (true) {
         const buf = read_buf[hwm..eob];
@@ -129,8 +134,18 @@ fn runCase(case_no: usize) !void {
             };
             if (rsp.required_bytes == 0) {
                 var frame = rsp.frame.?;
+                std.debug.print("frame fragmentation: {}\n", .{frame.fragmentation()});
+                if (!frame.isValidContinuation(last_frame_fragmentation)) {
+                    // close connection
+                    client.shutdown(.both) catch {};
+                    return;
+                }
+
+                if (!frame.isControl()) {
+                    last_frame_fragmentation = frame.fragmentation();
+                }
+                // create and write echo frame
                 var echo_frame = frame.echo();
-                //std.debug.print("{}\n", .{frame});
                 if (frame.opcode != .pong) {
                     // send echo frame
                     const encode_rsp = echo_frame.encode(&write_buf);
@@ -146,7 +161,7 @@ fn runCase(case_no: usize) !void {
                 }
                 // close if recived close frame
                 if (frame.opcode == .close) {
-                    try client.shutdown(.both);
+                    client.shutdown(.both) catch {};
                     return;
                 }
                 hwm += rsp.bytes;
