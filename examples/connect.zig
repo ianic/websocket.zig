@@ -19,13 +19,14 @@ pub fn main() !void {
         // 1 Framing
         .{ .cases = 8, .desc = "1.1 Text Messages" },
         .{ .cases = 8, .desc = "1.2 Binary Messages" },
-
+        // 2 Pings/Pongs
         .{ .cases = 11, .desc = "2 Pings/Pongs" },
+        // 3 Reserved Bits
         .{ .cases = 7, .desc = "3 Reserved Bits" },
         // 4 Opcodes
         .{ .cases = 5, .desc = "4.1 Non-control Opcodes" },
         .{ .cases = 5, .desc = "4.2 Control Opcodes" },
-
+        // 5 Fragmentation
         .{ .cases = 20, .desc = "5 Fragmentation" },
         // 6 UTF-8 Handling
         .{ .cases = 3, .desc = "6.1 Valid UTF-8 with zero payload fragments" },
@@ -77,7 +78,7 @@ pub fn main() !void {
             // if (!group.descStartsWith("1")) {
             //     continue;
             // }
-            // if (case_no != 210) {
+            // if (case_no != 1) {
             //     continue;
             // }
             std.log.debug("running case no: {d} {s} {d} ", .{ case_no, group.desc, group_case + 1 });
@@ -88,7 +89,7 @@ pub fn main() !void {
                 try runner.sendEcho(frame);
             }
             if (runner.err) |err| {
-                std.log.err("error: {}", .{err});
+                std.log.err("{}", .{err});
             }
         }
     }
@@ -99,12 +100,11 @@ const Runner = struct {
 
     write_buf: [17 * 4096]u8 = undefined, // TODO buf size, this is because there are tests with 16 * 4096 payload size
     read_buf: [17 * 4096]u8 = undefined,
+    lwm: usize = 0,
+    consumed: usize = 0,
     hwm: usize = 0,
-    eob: usize = 0,
 
     last_frame_fragmentation: ws.Frame.Fragment = .unfragmented,
-    active_bytes: usize = 0,
-    last_frame: ?ws.Frame = null,
     err: ?anyerror = null,
 
     const Self = @This();
@@ -120,12 +120,12 @@ const Runner = struct {
         const host = try std.fmt.bufPrint(self.write_buf[0..], "{s}:{d}", .{ addr, port });
         var offset: usize = host.len;
         var hs = ws.Handshake.init(host);
-        try self.send(try hs.request(self.write_buf[offset..], path));
+        try self.write(try hs.request(self.write_buf[offset..], path));
 
         // handshake
         while (true) {
             try self.read();
-            const buf = self.activeReadBuf();
+            const buf = self.unconsumedReadBuf();
             var eor = std.mem.indexOf(u8, buf, http_request_separator) orelse 0; // eor = end of request
             if (eor == 0) continue; // read more
 
@@ -135,23 +135,24 @@ const Runner = struct {
                 self.tcpShutdown();
                 return error.IvalidHandshakeResponse;
             }
-            self.hwm = eor;
+            self.lwm = eor;
+            self.consumed = eor;
             break; // fine
         }
     }
 
     fn _readFrame(self: *Self) !ws.Frame {
         while (true) {
-            if (!self.readBufEmpty()) {
-                var rsp = try ws.Frame.decode(self.activeReadBuf());
+            if (self.consumed < self.hwm) { // there is something unconsumed
+                var rsp = try ws.Frame.decode(self.unconsumedReadBuf());
                 if (rsp.isValid()) {
                     var frame = rsp.frame.?;
                     try self.assertValidContinutation(&frame);
-                    self.active_bytes += rsp.bytes;
+                    self.consumed += rsp.bytes;
                     return frame;
                 } else { // not enough bytes in read_buf to decode frame
                     if (rsp.required_bytes > self.read_buf.len) {
-                        std.log.err("read buffer overflow required: {d}, current: {d}", .{ rsp.required_bytes, self.read_buf.len });
+                        //std.log.err("read buffer overflow required: {d}, current: {d}", .{ rsp.required_bytes, self.read_buf.len });
                         // TODO extend read_buffer
                         // TODO send close with too big message close status code
                         return error.ReadBufferOverflow;
@@ -164,9 +165,6 @@ const Runner = struct {
     }
 
     pub fn readFrame(self: *Self) ?ws.Frame {
-        self.hwm += self.active_bytes;
-        self.active_bytes = 0;
-
         while (true) {
             var frame = self._readFrame() catch |err| {
                 self.err = err;
@@ -174,6 +172,7 @@ const Runner = struct {
                 return null;
             };
             if (frame.isControl()) {
+                // TODO: send pong on ping, close on close, ignore pong
                 self.sendEcho(frame) catch |err| {
                     self.err = err;
                     self.tcpShutdown();
@@ -183,38 +182,39 @@ const Runner = struct {
                     self.tcpShutdown();
                     return null;
                 }
-                self.hwm += self.active_bytes;
-                self.active_bytes = 0;
                 continue;
             }
+            if (frame.fin == 1) self.lwm += self.consumed;
             return frame;
         }
     }
 
-    fn readBufEmpty(self: *Self) bool {
-        return self.hwm == self.eob;
+    fn unconsumedReadBuf(self: *Self) []u8 {
+        return self.read_buf[self.consumed..self.hwm];
     }
 
-    fn activeReadBuf(self: *Self) []u8 {
-        return self.read_buf[self.hwm..self.eob];
+    fn readBufConsumed(self: *Self) bool {
+        return self.lwm == self.hwm and self.consumed == self.lwm;
     }
 
     fn read(self: *Self) !void {
-        if (self.readBufEmpty() and self.hwm != 0) {
+        if (self.readBufConsumed()) {
             // move to the start of read buf
+            self.lwm = 0;
             self.hwm = 0;
-            self.eob = 0;
+            self.consumed = 0;
         }
-        const bytes_read = try self.client.read(self.read_buf[self.eob..], 0);
+        const bytes_read = try self.client.read(self.read_buf[self.hwm..], 0);
         if (bytes_read == 0) return error.ConnectionClosed;
-        self.eob += bytes_read;
+        self.hwm += bytes_read;
     }
 
     fn shrinkReadBuf(self: *Self) void {
-        if (self.hwm == 0) return;
-        std.mem.copy(u8, self.read_buf[0..], self.read_buf[self.hwm..self.eob]);
-        self.eob -= self.hwm;
-        self.hwm = 0;
+        if (self.lwm == 0) return;
+        std.mem.copy(u8, self.read_buf[0..], self.read_buf[self.lwm..self.hwm]);
+        self.hwm -= self.lwm;
+        if (self.consumed >= self.lwm) self.consumed -= self.lwm;
+        self.lwm = 0;
     }
 
     fn assertValidContinutation(self: *Self, frame: *ws.Frame) !void {
@@ -234,12 +234,12 @@ const Runner = struct {
                 unreachable;
             },
             .bytes => |rb| {
-                try self.send(self.write_buf[0..rb]);
+                try self.write(self.write_buf[0..rb]);
             },
         }
     }
 
-    fn send(self: *Self, buf: []const u8) !void {
+    fn write(self: *Self, buf: []const u8) !void {
         var bytes_written: usize = 0;
         while (bytes_written < buf.len)
             bytes_written += try self.client.write(buf, 0);
