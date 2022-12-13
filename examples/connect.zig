@@ -96,7 +96,7 @@ pub fn main() !void {
 }
 
 const Runner = struct {
-    client: tcp.Client,
+    tcp: tcp.Client,
 
     write_buf: [17 * 4096]u8 = undefined, // TODO buf size, this is because there are tests with 16 * 4096 payload size
     read_buf: [17 * 4096]u8 = undefined,
@@ -110,7 +110,7 @@ const Runner = struct {
     const Self = @This();
     pub fn init(host: []const u8, port: u16, path: []const u8) !Self {
         var r = Self{
-            .client = try Runner.tcpConnect(host, port),
+            .tcp = try Runner.tcpConnect(host, port),
         };
         try r.wsHandshake(host, port, path);
         return r;
@@ -141,7 +141,7 @@ const Runner = struct {
         }
     }
 
-    fn _readFrame(self: *Self) !ws.Frame {
+    fn decodeFrame(self: *Self) !ws.Frame {
         while (true) {
             if (self.consumed < self.hwm) { // there is something unconsumed
                 var rsp = try ws.Frame.decode(self.unconsumedReadBuf());
@@ -152,7 +152,6 @@ const Runner = struct {
                     return frame;
                 } else { // not enough bytes in read_buf to decode frame
                     if (rsp.required_bytes > self.read_buf.len) {
-                        //std.log.err("read buffer overflow required: {d}, current: {d}", .{ rsp.required_bytes, self.read_buf.len });
                         // TODO extend read_buffer
                         // TODO send close with too big message close status code
                         return error.ReadBufferOverflow;
@@ -164,29 +163,28 @@ const Runner = struct {
         }
     }
 
-    pub fn readFrame(self: *Self) ?ws.Frame {
+    fn tryReadFrame(self: *Self) !?ws.Frame {
         while (true) {
-            var frame = self._readFrame() catch |err| {
-                self.err = err;
-                self.tcpShutdown();
-                return null;
-            };
+            var frame = try self.decodeFrame();
             if (frame.isControl()) {
                 // TODO: send pong on ping, close on close, ignore pong
-                self.sendEcho(frame) catch |err| {
-                    self.err = err;
-                    self.tcpShutdown();
-                    return null;
-                };
-                if (frame.opcode == .close) {
-                    self.tcpShutdown();
-                    return null;
-                }
+                try self.sendEcho(frame);
+                if (frame.opcode == .close) return null;
                 continue;
             }
             if (frame.fin == 1) self.lwm += self.consumed;
             return frame;
         }
+    }
+
+    pub fn readFrame(self: *Self) ?ws.Frame {
+        const frame = self.tryReadFrame() catch |err| {
+            self.err = err;
+            self.tcpShutdown();
+            return null;
+        };
+        if (frame == null) self.tcpShutdown();
+        return frame;
     }
 
     fn unconsumedReadBuf(self: *Self) []u8 {
@@ -204,7 +202,7 @@ const Runner = struct {
             self.hwm = 0;
             self.consumed = 0;
         }
-        const bytes_read = try self.client.read(self.read_buf[self.hwm..], 0);
+        const bytes_read = try self.tcp.read(self.read_buf[self.hwm..], 0);
         if (bytes_read == 0) return error.ConnectionClosed;
         self.hwm += bytes_read;
     }
@@ -229,9 +227,9 @@ const Runner = struct {
         var echo_frame = frame.echo();
         const encode_rsp = echo_frame.encode(&self.write_buf);
         switch (encode_rsp) {
-            .required_bytes => |rb| {
-                std.log.err("write buf len: {d}, required: {d}", .{ self.write_buf.len, rb });
-                unreachable;
+            .required_bytes => |_| {
+                // std.log.err("write buf len: {d}, required: {d}", .{ self.write_buf.len, rb });
+                return error.WriteBufferOverflow;
             },
             .bytes => |rb| {
                 try self.write(self.write_buf[0..rb]);
@@ -242,11 +240,11 @@ const Runner = struct {
     fn write(self: *Self, buf: []const u8) !void {
         var bytes_written: usize = 0;
         while (bytes_written < buf.len)
-            bytes_written += try self.client.write(buf, 0);
+            bytes_written += try self.tcp.write(buf, 0);
     }
 
     fn tcpShutdown(self: *Self) void {
-        self.client.shutdown(.both) catch {};
+        self.tcp.shutdown(.both) catch {};
     }
 
     fn tcpConnect(host: []const u8, port: u16) !tcp.Client {
