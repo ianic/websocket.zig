@@ -122,7 +122,7 @@ pub const Frame = struct {
         maskUnmask(&self.masking_key, self.payload);
     }
 
-    pub fn echo(self: *Self) Frame {
+    pub fn echo(self: Self) Frame {
         var f = Frame{
             .fin = self.fin,
             .rsv1 = self.rsv1,
@@ -137,8 +137,8 @@ pub const Frame = struct {
         }
         if (f.opcode == .close and !self.isValidCloseCode() and self.payload.len >= 2) {
             // set close code to 1002 (protocol error) when received invalid close code
-            self.payload[0] = 0x3;
-            self.payload[1] = 0xea;
+            f.payload[0] = 0x3;
+            f.payload[1] = 0xea;
         }
         //if (f.opcode != .ping and f.opcode != .pong)
         f.setMaskingKey();

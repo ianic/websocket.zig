@@ -74,19 +74,22 @@ pub fn main() !void {
             //     group.descStartsWith("7.") or
             //     group.descStartsWith("5"))
             //     continue;
-            if (!group.descStartsWith("1")) {
-                continue;
-            }
+            // if (!group.descStartsWith("1")) {
+            //     continue;
+            // }
             // if (case_no != 210) {
             //     continue;
             // }
             std.log.debug("running case no: {d} {s} {d} ", .{ case_no, group.desc, group_case + 1 });
 
-            const path = try std.fmt.bufPrint(&path_buf, "/runCase?case={d}&agent=test.zig", .{case_no});
+            const path = try std.fmt.bufPrint(&path_buf, "/runCase?case={d}&agent=1.zig", .{case_no});
             var runner = try Runner.init("127.0.0.1", 9001, path);
-            runner.echoLoop() catch |err| {
+            while (runner.readFrame()) |frame| {
+                try runner.sendEcho(frame);
+            }
+            if (runner.err) |err| {
                 std.log.err("error: {}", .{err});
-            };
+            }
         }
     }
 }
@@ -100,6 +103,9 @@ const Runner = struct {
     eob: usize = 0,
 
     last_frame_fragmentation: ws.Frame.Fragment = .unfragmented,
+    active_bytes: usize = 0,
+    last_frame: ?ws.Frame = null,
+    err: ?anyerror = null,
 
     const Self = @This();
     pub fn init(host: []const u8, port: u16, path: []const u8) !Self {
@@ -134,20 +140,15 @@ const Runner = struct {
         }
     }
 
-    fn echoLoop(self: *Self) !void {
-        defer self.tcpShutdown();
+    fn _readFrame(self: *Self) !ws.Frame {
         while (true) {
             if (!self.readBufEmpty()) {
                 var rsp = try ws.Frame.decode(self.activeReadBuf());
                 if (rsp.isValid()) {
                     var frame = rsp.frame.?;
                     try self.assertValidContinutation(&frame);
-
-                    try self.sendEcho(&frame); // create and write echo frame
-                    if (frame.opcode == .close) return; // recived close frame
-
-                    self.hwm += rsp.bytes; // move hwm for consumed bytes
-                    continue;
+                    self.active_bytes += rsp.bytes;
+                    return frame;
                 } else { // not enough bytes in read_buf to decode frame
                     if (rsp.required_bytes > self.read_buf.len) {
                         std.log.err("read buffer overflow required: {d}, current: {d}", .{ rsp.required_bytes, self.read_buf.len });
@@ -159,6 +160,34 @@ const Runner = struct {
                 }
             }
             try self.read();
+        }
+    }
+
+    pub fn readFrame(self: *Self) ?ws.Frame {
+        self.hwm += self.active_bytes;
+        self.active_bytes = 0;
+
+        while (true) {
+            var frame = self._readFrame() catch |err| {
+                self.err = err;
+                self.tcpShutdown();
+                return null;
+            };
+            if (frame.isControl()) {
+                self.sendEcho(frame) catch |err| {
+                    self.err = err;
+                    self.tcpShutdown();
+                    return null;
+                };
+                if (frame.opcode == .close) {
+                    self.tcpShutdown();
+                    return null;
+                }
+                self.hwm += self.active_bytes;
+                self.active_bytes = 0;
+                continue;
+            }
+            return frame;
         }
     }
 
@@ -183,7 +212,6 @@ const Runner = struct {
 
     fn shrinkReadBuf(self: *Self) void {
         if (self.hwm == 0) return;
-        //std.log.debug("{d} rewind read_buf to start hwm: {d}, eob: {d}", .{ case_no, hwm, eob });
         std.mem.copy(u8, self.read_buf[0..], self.read_buf[self.hwm..self.eob]);
         self.eob -= self.hwm;
         self.hwm = 0;
@@ -194,7 +222,7 @@ const Runner = struct {
         if (!frame.isControl()) self.last_frame_fragmentation = frame.fragmentation();
     }
 
-    fn sendEcho(self: *Self, frame: *ws.Frame) !void {
+    pub fn sendEcho(self: *Self, frame: ws.Frame) !void {
         if (frame.opcode == .pong) return;
 
         // send echo frame
