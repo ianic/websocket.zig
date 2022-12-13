@@ -65,6 +65,7 @@ pub fn main() !void {
     };
 
     var case_no: usize = 0;
+    var path_buf: [128]u8 = undefined;
     for (tests_groups) |group| {
         var group_case: usize = 0;
         while (group_case < group.cases) : (group_case += 1) {
@@ -73,14 +74,16 @@ pub fn main() !void {
             //     group.descStartsWith("7.") or
             //     group.descStartsWith("5"))
             //     continue;
-            // if (!group.descStartsWith("1")) {
-            //     continue;
-            // }
+            if (!group.descStartsWith("1")) {
+                continue;
+            }
             // if (case_no != 210) {
             //     continue;
             // }
             std.log.debug("running case no: {d} {s} {d} ", .{ case_no, group.desc, group_case + 1 });
-            var runner = try Runner.init("127.0.0.1", 9001, case_no);
+
+            const path = try std.fmt.bufPrint(&path_buf, "/runCase?case={d}&agent=test.zig", .{case_no});
+            var runner = try Runner.init("127.0.0.1", 9001, path);
             runner.echoLoop() catch |err| {
                 std.log.err("error: {}", .{err});
             };
@@ -91,7 +94,7 @@ pub fn main() !void {
 const Runner = struct {
     client: tcp.Client,
 
-    write_buf: [17 * 4096]u8 = undefined,
+    write_buf: [17 * 4096]u8 = undefined, // TODO buf size, this is because there are tests with 16 * 4096 payload size
     read_buf: [17 * 4096]u8 = undefined,
     hwm: usize = 0,
     eob: usize = 0,
@@ -99,36 +102,29 @@ const Runner = struct {
     last_frame_fragmentation: ws.Frame.Fragment = .unfragmented,
 
     const Self = @This();
-    pub fn init(host: []const u8, port: u16, case_no: usize) !Self {
+    pub fn init(host: []const u8, port: u16, path: []const u8) !Self {
         var r = Self{
             .client = try Runner.tcpConnect(host, port),
         };
-        try r.wsHandshake(host, port, case_no);
+        try r.wsHandshake(host, port, path);
         return r;
     }
 
-    fn wsHandshake(self: *Self, host: []const u8, port: u16, case_no: usize) !void {
-        const host_header = try std.fmt.bufPrint(self.write_buf[0..], "{s}:{d}", .{ host, port });
-        var offset: usize = host_header.len;
-        const path = try std.fmt.bufPrint(self.write_buf[offset..], "/runCase?case={d}&agent=test.zig", .{case_no});
-        offset += path.len;
-        var hs = ws.Handshake.init("127.0.0.1:9001");
-        _ = try self.client.write(try hs.request(self.write_buf[offset..], path), 0);
+    fn wsHandshake(self: *Self, addr: []const u8, port: u16, path: []const u8) !void {
+        const host = try std.fmt.bufPrint(self.write_buf[0..], "{s}:{d}", .{ addr, port });
+        var offset: usize = host.len;
+        var hs = ws.Handshake.init(host);
+        try self.send(try hs.request(self.write_buf[offset..], path));
 
         // handshake
         while (true) {
-            const br = try self.client.read(self.read_buf[self.eob..], 0);
-            if (br == 0) {
-                return error.ConnectionClosed;
-            }
-            self.eob += br;
-            const buf = self.read_buf[0..self.eob];
+            try self.read();
+            const buf = self.activeReadBuf();
             var eor = std.mem.indexOf(u8, buf, http_request_separator) orelse 0; // eor = end of request
-            if (eor == 0) {
-                continue; // read more
-            }
+            if (eor == 0) continue; // read more
+
             eor += http_request_separator.len;
-            const rsp_buf = self.read_buf[0..eor];
+            const rsp_buf = buf[0..eor];
             if (!hs.isValidResponse(rsp_buf)) {
                 self.tcpShutdown();
                 return error.IvalidHandshakeResponse;
@@ -142,7 +138,7 @@ const Runner = struct {
         defer self.tcpShutdown();
         while (true) {
             if (!self.readBufEmpty()) {
-                var rsp = try ws.Frame.decode(self.read_buf[self.hwm..self.eob]);
+                var rsp = try ws.Frame.decode(self.activeReadBuf());
                 if (rsp.isValid()) {
                     var frame = rsp.frame.?;
                     try self.assertValidContinutation(&frame);
@@ -168,6 +164,10 @@ const Runner = struct {
 
     fn readBufEmpty(self: *Self) bool {
         return self.hwm == self.eob;
+    }
+
+    fn activeReadBuf(self: *Self) []u8 {
+        return self.read_buf[self.hwm..self.eob];
     }
 
     fn read(self: *Self) !void {
