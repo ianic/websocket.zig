@@ -8,14 +8,13 @@ const U1_0: u1 = 0;
 
 pub const Frame = struct {
     fin: u1,
-    rsv1: u1,
-    rsv2: u1,
-    rsv3: u1,
+    rsv1: u1 = 0,
+    rsv2: u1 = 0,
+    rsv3: u1 = 0,
     opcode: Opcode,
     mask: u1 = 0,
     masking_key: [4]u8 = [_]u8{ 0, 0, 0, 0 },
     payload: []u8,
-    frame_len: u64,
 
     const Opcode = enum(u4) {
         continuation = 0,
@@ -31,7 +30,6 @@ pub const Frame = struct {
     };
 
     const Self = @This();
-    const invalidFrame = Self{ .fin = 0, .rsv1 = 0, .rsv2 = 0, .rsv3 = 0, .opcode = .close, .mask = 0, .payload = &[0]u8{}, .frame_len = 0 };
 
     const DecodeResult = struct {
         required_bytes: usize = 0,
@@ -73,7 +71,7 @@ pub const Frame = struct {
         const opcode = try getOpcode(@intCast(u4, buf[0] & 0x0f));
         if (opcode.isControl()) {
             if (payload_bytes != 1)
-                return error.WrongPayloadForControlOpcode;
+                return error.TooBigPayloadForControlFrame;
             if (fin == 0)
                 return error.FragmentedControlFrame;
         }
@@ -88,7 +86,6 @@ pub const Frame = struct {
             .opcode = opcode,
             .mask = if (masked) U1_1 else U1_0,
             .payload = payload,
-            .frame_len = frame_len,
         };
         if (masked) {
             f.masking_key[0] = buf[mask_start];
@@ -97,7 +94,8 @@ pub const Frame = struct {
             f.masking_key[3] = buf[mask_start + 3];
             f.unmaskPayload();
         }
-        if (opcode == .text)
+        if ((opcode == .text and f.fragmentation() == .unfragmented) or
+            opcode == .close)
             try f.assertValidUtf8Payload();
 
         return .{ .bytes = frame_len, .frame = f };
@@ -111,7 +109,7 @@ pub const Frame = struct {
             8 => .close,
             9 => .ping,
             0xa => .pong,
-            else => return error.WrongOpcode,
+            else => return error.ReservedOpcode,
         };
     }
 
@@ -130,7 +128,6 @@ pub const Frame = struct {
             .rsv3 = self.rsv3,
             .opcode = self.opcode,
             .payload = self.payload,
-            .frame_len = self.frame_len,
         };
         if (f.opcode == .ping) {
             f.opcode = .pong;
@@ -254,6 +251,10 @@ pub const Frame = struct {
         }
         if (!std.unicode.utf8ValidateSlice(utf8Payload)) return error.InvalidUtf8Payload;
     }
+
+    pub fn isFin(self: Self) bool {
+        return self.fin == 1;
+    }
 };
 
 fn payloadBytes(len: u64) u8 {
@@ -286,7 +287,7 @@ fn decodePayloadLen(buf: []const u8) !DecodePayloadLenResult {
     }
     if (buf.len < 9) return .{ .required_bytes = 9 };
     if (buf[1] & 0x80 == 0x80) {
-        return error.WrongPayloadLen;
+        return error.TooBigPayload;
     }
     // TODO: there must be std fn for this
     pl = (@intCast(u64, buf[1]) << 56) +
@@ -321,7 +322,7 @@ test "decodePayloadLen" {
     try testing.expectEqual(try decodePayloadLen(&[_]u8{0x7f}), .{ .required_bytes = 9 });
 
     // error
-    try testing.expectError(error.WrongPayloadLen, decodePayloadLen(&[_]u8{ 0x7f, 0x80, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8 }));
+    try testing.expectError(error.TooBigPayload, decodePayloadLen(&[_]u8{ 0x7f, 0x80, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8 }));
 }
 
 test "decode" {
@@ -329,7 +330,6 @@ test "decode" {
     var rsp = try Frame.decode(&hello);
     try testing.expectEqual(rsp.bytes, 7);
     const f = rsp.frame.?;
-    try testing.expectEqual(f.frame_len, 7);
     try testing.expectEqual(f.fin, 1);
     try testing.expectEqual(f.rsv1, 0);
     try testing.expectEqual(f.rsv2, 0);
@@ -345,7 +345,6 @@ test "decode masked" {
     var rsp = try Frame.decode(&hello);
     try testing.expectEqual(rsp.bytes, 11);
     var f = rsp.frame.?;
-    try testing.expectEqual(f.frame_len, 11);
     try testing.expectEqual(f.fin, 1);
     try testing.expectEqual(f.rsv1, 0);
     try testing.expectEqual(f.rsv2, 0);

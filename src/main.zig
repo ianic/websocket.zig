@@ -302,7 +302,7 @@ pub fn Client(comptime buffers_size: usize) type {
                 var frame = try self.decodeFrame();
                 if (frame.isControl()) {
                     // TODO: send pong on ping, close on close, ignore pong
-                    try self.sendEcho(frame);
+                    try self.echoFrame(frame);
                     if (frame.opcode == .close) return null;
                     continue;
                 }
@@ -319,6 +319,42 @@ pub fn Client(comptime buffers_size: usize) type {
             };
             if (frame == null) self.tcpShutdown();
             return frame;
+        }
+
+        pub fn readMsg(self: *Self, allocator: std.mem.Allocator) ?Msg {
+            var frames = std.ArrayList(Frame).init(allocator);
+            defer frames.deinit();
+
+            while (self.readFrame()) |next| {
+                frames.append(next) catch |err| {
+                    self.err = err;
+                    self.tcpShutdown();
+                    return null;
+                };
+                if (next.isFin()) {
+                    const msg_frames = frames.toOwnedSlice();
+                    var m = Msg{
+                        .encoding = if (msg_frames[0].opcode == .binary) .binary else .text,
+                        .frames = msg_frames,
+                    };
+                    if (m.frames.len > 1 and m.encoding == .text) {
+                        m.assertValidUtf8Payload() catch |err| {
+                            m.deinit(allocator);
+                            self.err = err;
+                            self.tcpShutdown();
+                            return null;
+                        };
+                    }
+                    return m;
+                }
+            }
+            return null;
+        }
+
+        pub fn echoMsg(self: *Self, msg: Msg) !void {
+            for (msg.frames) |frame| {
+                try self.echoFrame(frame);
+            }
         }
 
         fn unconsumedReadBuf(self: *Self) []u8 {
@@ -354,10 +390,9 @@ pub fn Client(comptime buffers_size: usize) type {
             if (!frame.isControl()) self.last_frame_fragmentation = frame.fragmentation();
         }
 
-        pub fn sendEcho(self: *Self, frame: Frame) !void {
+        pub fn echoFrame(self: *Self, frame: Frame) !void {
             if (frame.opcode == .pong) return;
 
-            // send echo frame
             var echo_frame = frame.echo();
             const encode_rsp = echo_frame.encode(&self.write_buf);
             switch (encode_rsp) {
@@ -365,8 +400,8 @@ pub fn Client(comptime buffers_size: usize) type {
                     // std.log.err("write buf len: {d}, required: {d}", .{ self.write_buf.len, rb });
                     return error.WriteBufferOverflow;
                 },
-                .bytes => |rb| {
-                    try self.write(self.write_buf[0..rb]);
+                .bytes => |b| {
+                    try self.write(self.write_buf[0..b]);
                 },
             }
         }
@@ -396,4 +431,85 @@ fn showBuf(buf: []const u8) void {
     std.debug.print("\n", .{});
     for (buf) |b|
         std.debug.print("0x{x:0>2}, ", .{b});
+}
+
+pub const MsgEncoding = enum {
+    text,
+    binary,
+};
+
+pub const Msg = struct {
+    frames: []Frame,
+    encoding: MsgEncoding = .text,
+
+    const Self = @This();
+
+    pub fn assertValidUtf8Payload(self: Self) !void {
+        var cp: [4]u8 = undefined;
+        var cp_len: usize = 0;
+        var cp_pos: usize = 0;
+
+        var frame_no: usize = 0;
+        while (frame_no < self.frames.len) {
+            var s = self.frames[frame_no].payload;
+            var i: usize = 0;
+
+            while (i < s.len) : (i += 1) {
+                if (cp_len == 0) {
+                    cp_len = std.unicode.utf8ByteSequenceLength(s[i]) catch return error.InvalidUtf8Payload;
+                }
+                cp[cp_pos] = s[i];
+                cp_pos += 1;
+                if (cp_pos == cp_len) {
+                    _ = std.unicode.utf8Decode(cp[0..cp_len]) catch return error.InvalidUtf8Payload;
+                    cp_len = 0;
+                    cp_pos = 0;
+                }
+            }
+            frame_no += 1;
+        }
+        if (cp_len != 0) return error.InvalidUtf8Payload;
+    }
+
+    pub fn deinit(self: Self, allocator: std.mem.Allocator) void {
+        allocator.free(self.frames);
+    }
+};
+
+test "valid utf8 message" {
+    // Hello-µ@ßöäüàá-UTF-8!!
+    var data1 = [_]u8{ 0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x2d, 0xc2, 0xb5, 0x40, 0xc3, 0x9f, 0xc3, 0xb6, 0xc3, 0xa4, 0xc3, 0xbc, 0xc3, 0xa0, 0xc3, 0xa1, 0x2d, 0x55, 0x54, 0x46, 0x2d, 0x38, 0x21, 0x21 };
+    try testWithFragmentation(&data1);
+    // κόσμε
+    var data2 = [_]u8{ 0xce, 0xba, 0xe1, 0xbd, 0xb9, 0xcf, 0x83, 0xce, 0xbc, 0xce, 0xb5 };
+    try testWithFragmentation(&data2);
+}
+
+fn testWithFragmentation(data: []u8) !void {
+    var fragment_len: usize = 1;
+    while (fragment_len <= data.len) : (fragment_len += 1) {
+        var m = try testMsgWithFragments(data, fragment_len);
+        try m.assertValidUtf8Payload();
+        m.deinit(testing.allocator);
+    }
+}
+
+fn testMsgWithFragments(data: []u8, fragment_len: usize) !Msg {
+    var frames = std.ArrayList(Frame).init(testing.allocator);
+    var i: usize = 0;
+    while (i < data.len) : (i += fragment_len) {
+        var j = i + fragment_len;
+        if (j > data.len) j = data.len;
+        try frames.append(Frame{ .fin = 1, .opcode = .text, .payload = data[i..j] });
+    }
+    return Msg{
+        .frames = frames.toOwnedSlice(),
+    };
+}
+
+test "invalid utf8 message" {
+    var data = [_]u8{ 0xce, 0xba, 0xe1, 0xbd, 0xb9, 0xcf, 0x83, 0xce, 0xbc, 0xce, 0xb5, 0xed, 0xa0, 0x80, 0x65, 0x64, 0x69, 0x74, 0x65, 0x64 };
+    var m = try testMsgWithFragments(&data, 1);
+    try testing.expectError(error.InvalidUtf8Payload, m.assertValidUtf8Payload());
+    m.deinit(testing.allocator);
 }

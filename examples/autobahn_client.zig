@@ -61,6 +61,10 @@ const tests_groups = [_]Group{
 };
 
 pub fn main() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
     var case_no: usize = 0;
     for (tests_groups) |group| {
         var group_case: usize = 0;
@@ -70,27 +74,32 @@ pub fn main() !void {
             //     group.descStartsWith("7.") or
             //     group.descStartsWith("5"))
             //     continue;
-            // if (!group.descStartsWith("1")) {
+            // if (!group.descStartsWith("4")) {
             //     continue;
             // }
-            // if (case_no != 1) {
+            // if (case_no != 73) {
             //     continue;
             // }
-            //std.log.debug("running case no: {d} {s} {d} ", .{ case_no, group.desc, group_case + 1 });
-            try runTestCase(case_no);
+            std.log.debug("running case no: {d} {s} {d} ", .{ case_no, group.desc, group_case + 1 });
+            try runTestCase(case_no, allocator);
         }
     }
 }
 
 const Client = ws.Client(17 * 4096); // buf size, this is because there are tests with 16 * 4096 payload size)
 
-fn runTestCase(no: usize) !void {
+fn runTestCase(no: usize, allocator: std.mem.Allocator) !void {
     var path_buf: [128]u8 = undefined;
-    const path = try std.fmt.bufPrint(&path_buf, "/runCase?case={d}&agent=1.zig", .{no});
+    const path = try std.fmt.bufPrint(&path_buf, "/runCase?case={d}&agent=2.zig", .{no});
 
     var client = try Client.init("127.0.0.1", 9001, path);
-    while (client.readFrame()) |frame| {
-        try client.sendEcho(frame);
+    // while (client.readFrame()) |frame| {
+    //     try client.echoFrame(frame);
+    // }
+    while (client.readMsg(allocator)) |msg| {
+        defer msg.deinit(allocator);
+        //defer allocator.free(msg.frames);
+        try client.echoMsg(msg);
     }
     if (client.err) |err| {
         std.log.err("case: {d} {}", .{ no, err });
