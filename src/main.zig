@@ -227,204 +227,205 @@ pub const Handshake = struct {
 const net = std.x.net;
 const tcp = net.tcp;
 
-pub fn Client(comptime buffers_size: usize) type {
-    return struct {
-        tcp: tcp.Client,
+pub const Client = struct {
+    tcp: tcp.Client,
 
-        write_buf: [buffers_size]u8 = undefined,
-        read_buf: [buffers_size]u8 = undefined,
-        lwm: usize = 0,
-        consumed: usize = 0,
-        hwm: usize = 0,
+    write_buf: []u8,
+    read_buf: []u8,
+    lwm: usize = 0,
+    consumed: usize = 0,
+    hwm: usize = 0,
 
-        last_frame_fragmentation: Frame.Fragment = .unfragmented,
-        err: ?anyerror = null,
+    last_frame_fragmentation: Frame.Fragment = .unfragmented,
+    err: ?anyerror = null,
 
-        const http_request_separator = "\r\n\r\n";
-        const Self = @This();
-        pub fn init(host: []const u8, port: u16, path: []const u8) !Self {
-            var r = Self{
-                .tcp = try Self.tcpConnect(host, port),
-            };
-            try r.wsHandshake(host, port, path);
-            return r;
-        }
+    const http_request_separator = "\r\n\r\n";
+    const Self = @This();
 
-        fn wsHandshake(self: *Self, addr: []const u8, port: u16, path: []const u8) !void {
-            const host = try std.fmt.bufPrint(self.write_buf[0..], "{s}:{d}", .{ addr, port });
-            var offset: usize = host.len;
-            var hs = Handshake.init(host);
-            try self.write(try hs.request(self.write_buf[offset..], path));
+    pub fn init(read_buf: []u8, write_buf: []u8, host: []const u8, port: u16, path: []const u8) !Self {
+        var r = Self{
+            .read_buf = read_buf,
+            .write_buf = write_buf,
+            .tcp = try Self.tcpConnect(host, port),
+        };
+        try r.wsHandshake(host, port, path);
+        return r;
+    }
 
-            // handshake
-            while (true) {
-                try self.read();
-                const buf = self.unconsumedReadBuf();
-                var eor = std.mem.indexOf(u8, buf, http_request_separator) orelse 0; // eor = end of request
-                if (eor == 0) continue; // read more
+    fn wsHandshake(self: *Self, addr: []const u8, port: u16, path: []const u8) !void {
+        const host = try std.fmt.bufPrint(self.write_buf[0..], "{s}:{d}", .{ addr, port });
+        var offset: usize = host.len;
+        var hs = Handshake.init(host);
+        try self.write(try hs.request(self.write_buf[offset..], path));
 
-                eor += http_request_separator.len;
-                const rsp_buf = buf[0..eor];
-                if (!hs.isValidResponse(rsp_buf)) {
-                    self.tcpShutdown();
-                    return error.IvalidHandshakeResponse;
-                }
-                self.lwm = eor;
-                self.consumed = eor;
-                break; // fine
+        // handshake
+        while (true) {
+            try self.read();
+            const buf = self.unconsumedReadBuf();
+            var eor = std.mem.indexOf(u8, buf, http_request_separator) orelse 0; // eor = end of request
+            if (eor == 0) continue; // read more
+
+            eor += http_request_separator.len;
+            const rsp_buf = buf[0..eor];
+            if (!hs.isValidResponse(rsp_buf)) {
+                self.tcpShutdown();
+                return error.IvalidHandshakeResponse;
             }
+            self.lwm = eor;
+            self.consumed = eor;
+            break; // fine
         }
+    }
 
-        fn decodeFrame(self: *Self) !Frame {
-            while (true) {
-                if (self.consumed < self.hwm) { // there is something unconsumed
-                    var rsp = try Frame.decode(self.unconsumedReadBuf());
-                    if (rsp.isValid()) {
-                        var frame = rsp.frame.?;
-                        try self.assertValidContinutation(&frame);
-                        self.consumed += rsp.bytes;
-                        return frame;
-                    } else { // not enough bytes in read_buf to decode frame
-                        if (rsp.required_bytes > self.read_buf.len) {
-                            // TODO extend read_buffer
-                            // TODO send close with too big message close status code
-                            return error.ReadBufferOverflow;
-                        }
-                        self.shrinkReadBuf();
+    fn decodeFrame(self: *Self) !Frame {
+        while (true) {
+            if (self.consumed < self.hwm) { // there is something unconsumed
+                var rsp = try Frame.decode(self.unconsumedReadBuf());
+                if (rsp.isValid()) {
+                    var frame = rsp.frame.?;
+                    try self.assertValidContinutation(&frame);
+                    self.consumed += rsp.bytes;
+                    return frame;
+                } else { // not enough bytes in read_buf to decode frame
+                    if (rsp.required_bytes > self.read_buf.len) {
+                        // TODO extend read_buffer
+                        // TODO send close with too big message close status code
+                        return error.ReadBufferOverflow;
                     }
+                    self.shrinkReadBuf();
                 }
-                try self.read();
             }
+            try self.read();
         }
+    }
 
-        fn tryReadFrame(self: *Self) !?Frame {
-            while (true) {
-                var frame = try self.decodeFrame();
-                if (frame.isControl()) {
-                    // TODO: send pong on ping, close on close, ignore pong
-                    try self.echoFrame(frame);
-                    if (frame.opcode == .close) return null;
-                    continue;
-                }
-                if (frame.fin == 1) self.lwm += self.consumed;
-                return frame;
+    fn tryReadFrame(self: *Self) !?Frame {
+        while (true) {
+            var frame = try self.decodeFrame();
+            if (frame.isControl()) {
+                // TODO: send pong on ping, close on close, ignore pong
+                try self.echoFrame(frame);
+                if (frame.opcode == .close) return null;
+                continue;
             }
+            if (frame.fin == 1) self.lwm += self.consumed;
+            return frame;
         }
+    }
 
-        pub fn readFrame(self: *Self) ?Frame {
-            const frame = self.tryReadFrame() catch |err| {
+    pub fn readFrame(self: *Self) ?Frame {
+        const frame = self.tryReadFrame() catch |err| {
+            self.err = err;
+            self.tcpShutdown();
+            return null;
+        };
+        if (frame == null) self.tcpShutdown();
+        return frame;
+    }
+
+    pub fn readMsg(self: *Self, allocator: std.mem.Allocator) ?Msg {
+        var frames = std.ArrayList(Frame).init(allocator);
+        defer frames.deinit();
+
+        while (self.readFrame()) |next| {
+            frames.append(next) catch |err| {
                 self.err = err;
                 self.tcpShutdown();
                 return null;
             };
-            if (frame == null) self.tcpShutdown();
-            return frame;
-        }
-
-        pub fn readMsg(self: *Self, allocator: std.mem.Allocator) ?Msg {
-            var frames = std.ArrayList(Frame).init(allocator);
-            defer frames.deinit();
-
-            while (self.readFrame()) |next| {
-                frames.append(next) catch |err| {
-                    self.err = err;
-                    self.tcpShutdown();
-                    return null;
+            if (next.isFin()) {
+                const msg_frames = frames.toOwnedSlice();
+                var m = Msg{
+                    .encoding = if (msg_frames[0].opcode == .binary) .binary else .text,
+                    .frames = msg_frames,
                 };
-                if (next.isFin()) {
-                    const msg_frames = frames.toOwnedSlice();
-                    var m = Msg{
-                        .encoding = if (msg_frames[0].opcode == .binary) .binary else .text,
-                        .frames = msg_frames,
+                if (m.frames.len > 1 and m.encoding == .text) {
+                    m.assertValidUtf8Payload() catch |err| {
+                        m.deinit(allocator);
+                        self.err = err;
+                        self.tcpShutdown();
+                        return null;
                     };
-                    if (m.frames.len > 1 and m.encoding == .text) {
-                        m.assertValidUtf8Payload() catch |err| {
-                            m.deinit(allocator);
-                            self.err = err;
-                            self.tcpShutdown();
-                            return null;
-                        };
-                    }
-                    return m;
                 }
-            }
-            return null;
-        }
-
-        pub fn echoMsg(self: *Self, msg: Msg) !void {
-            for (msg.frames) |frame| {
-                try self.echoFrame(frame);
+                return m;
             }
         }
+        return null;
+    }
 
-        fn unconsumedReadBuf(self: *Self) []u8 {
-            return self.read_buf[self.consumed..self.hwm];
+    pub fn echoMsg(self: *Self, msg: Msg) !void {
+        for (msg.frames) |frame| {
+            try self.echoFrame(frame);
         }
+    }
 
-        fn readBufConsumed(self: *Self) bool {
-            return self.lwm == self.hwm and self.consumed == self.lwm;
-        }
+    fn unconsumedReadBuf(self: *Self) []u8 {
+        return self.read_buf[self.consumed..self.hwm];
+    }
 
-        fn read(self: *Self) !void {
-            if (self.readBufConsumed()) {
-                // move to the start of read buf
-                self.lwm = 0;
-                self.hwm = 0;
-                self.consumed = 0;
-            }
-            const bytes_read = try self.tcp.read(self.read_buf[self.hwm..], 0);
-            if (bytes_read == 0) return error.ConnectionClosed;
-            self.hwm += bytes_read;
-        }
+    fn readBufConsumed(self: *Self) bool {
+        return self.lwm == self.hwm and self.consumed == self.lwm;
+    }
 
-        fn shrinkReadBuf(self: *Self) void {
-            if (self.lwm == 0) return;
-            std.mem.copy(u8, self.read_buf[0..], self.read_buf[self.lwm..self.hwm]);
-            self.hwm -= self.lwm;
-            if (self.consumed >= self.lwm) self.consumed -= self.lwm;
+    fn read(self: *Self) !void {
+        if (self.readBufConsumed()) {
+            // move to the start of read buf
             self.lwm = 0;
+            self.hwm = 0;
+            self.consumed = 0;
         }
+        const bytes_read = try self.tcp.read(self.read_buf[self.hwm..], 0);
+        if (bytes_read == 0) return error.ConnectionClosed;
+        self.hwm += bytes_read;
+    }
 
-        fn assertValidContinutation(self: *Self, frame: *Frame) !void {
-            if (!frame.isValidContinuation(self.last_frame_fragmentation)) return error.InvalidFragmentation;
-            if (!frame.isControl()) self.last_frame_fragmentation = frame.fragmentation();
+    fn shrinkReadBuf(self: *Self) void {
+        if (self.lwm == 0) return;
+        std.mem.copy(u8, self.read_buf[0..], self.read_buf[self.lwm..self.hwm]);
+        self.hwm -= self.lwm;
+        if (self.consumed >= self.lwm) self.consumed -= self.lwm;
+        self.lwm = 0;
+    }
+
+    fn assertValidContinutation(self: *Self, frame: *Frame) !void {
+        if (!frame.isValidContinuation(self.last_frame_fragmentation)) return error.InvalidFragmentation;
+        if (!frame.isControl()) self.last_frame_fragmentation = frame.fragmentation();
+    }
+
+    pub fn echoFrame(self: *Self, frame: Frame) !void {
+        if (frame.opcode == .pong) return;
+
+        var echo_frame = frame.echo();
+        const encode_rsp = echo_frame.encode(self.write_buf);
+        switch (encode_rsp) {
+            .required_bytes => |_| {
+                // std.log.err("write buf len: {d}, required: {d}", .{ self.write_buf.len, rb });
+                return error.WriteBufferOverflow;
+            },
+            .bytes => |b| {
+                try self.write(self.write_buf[0..b]);
+            },
         }
+    }
 
-        pub fn echoFrame(self: *Self, frame: Frame) !void {
-            if (frame.opcode == .pong) return;
+    fn write(self: *Self, buf: []const u8) !void {
+        var bytes_written: usize = 0;
+        while (bytes_written < buf.len)
+            bytes_written += try self.tcp.write(buf, 0);
+    }
 
-            var echo_frame = frame.echo();
-            const encode_rsp = echo_frame.encode(&self.write_buf);
-            switch (encode_rsp) {
-                .required_bytes => |_| {
-                    // std.log.err("write buf len: {d}, required: {d}", .{ self.write_buf.len, rb });
-                    return error.WriteBufferOverflow;
-                },
-                .bytes => |b| {
-                    try self.write(self.write_buf[0..b]);
-                },
-            }
-        }
+    fn tcpShutdown(self: *Self) void {
+        self.tcp.shutdown(.both) catch {};
+    }
 
-        fn write(self: *Self, buf: []const u8) !void {
-            var bytes_written: usize = 0;
-            while (bytes_written < buf.len)
-                bytes_written += try self.tcp.write(buf, 0);
-        }
-
-        fn tcpShutdown(self: *Self) void {
-            self.tcp.shutdown(.both) catch {};
-        }
-
-        fn tcpConnect(host: []const u8, port: u16) !tcp.Client {
-            const addr = net.ip.Address.initIPv4(try std.x.os.IPv4.parse(host), port);
-            const client = try tcp.Client.init(.ip, .{ .close_on_exec = true });
-            try client.connect(addr);
-            errdefer client.deinit();
-            return client;
-        }
-    };
-}
+    fn tcpConnect(host: []const u8, port: u16) !tcp.Client {
+        const addr = net.ip.Address.initIPv4(try std.x.os.IPv4.parse(host), port);
+        const client = try tcp.Client.init(.ip, .{ .close_on_exec = true });
+        try client.connect(addr);
+        errdefer client.deinit();
+        return client;
+    }
+};
 
 // debug helper
 fn showBuf(buf: []const u8) void {
