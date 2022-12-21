@@ -26,20 +26,26 @@ pub fn main() !void {
         std.log.debug("running case no: {d}", .{case_no});
         try runTestCase(read_buf, write_buf, case_no, allocator);
     }
+    std.debug.print("\n", .{});
 }
+
+const Client = ws.tcpClient;
 
 fn runTestCase(read_buf: []u8, write_buf: []u8, no: usize, allocator: std.mem.Allocator) !void {
     var path_buf: [128]u8 = undefined;
     const path = try std.fmt.bufPrint(&path_buf, "/runCase?case={d}&agent=websocket.zig", .{no});
 
-    var client = try ws.Client.init(read_buf, write_buf, "127.0.0.1", 9001, path);
+    var client = try Client.init(read_buf, write_buf, "127.0.0.1", 9001, path);
 
     while (client.readMsg(allocator)) |msg| {
         defer msg.deinit(allocator);
         //defer allocator.free(msg.frames);
         try client.echoMsg(msg);
     }
-    if (client.err) |err| {
-        std.log.err("case: {d} {}", .{ no, err });
+    if (client.err) |_| {
+        std.debug.print("e", .{});
+        //std.log.err("case: {d} {}", .{ no, err });
+    } else {
+        std.debug.print(".", .{});
     }
 }
