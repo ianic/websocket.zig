@@ -1,5 +1,6 @@
 const std = @import("std");
 const testing = std.testing;
+const assert = std.debug.assert;
 
 var rnd = std.rand.DefaultPrng.init(0);
 
@@ -14,9 +15,9 @@ pub const Frame = struct {
     opcode: Opcode,
     mask: u1 = 0,
     masking_key: [4]u8 = [_]u8{ 0, 0, 0, 0 },
-    payload: []u8,
+    payload: []const u8,
 
-    const Opcode = enum(u4) {
+    pub const Opcode = enum(u4) {
         continuation = 0,
         text = 1,
         binary = 2,
@@ -28,9 +29,8 @@ pub const Frame = struct {
             return o == .close or o == .ping or o == .pong;
         }
     };
-
+    pub const max_header = 14; // 1 + 9 + 4 (flags|opcode + mask|payload_len + masking_key)
     const Self = @This();
-
     const DecodeResult = struct {
         required_bytes: usize = 0,
         bytes: usize = 0,
@@ -75,7 +75,8 @@ pub const Frame = struct {
             if (fin == 0)
                 return error.FragmentedControlFrame;
         }
-        const payload = buf[payload_start..frame_len];
+        var payload = buf[payload_start..frame_len];
+        if (opcode == .close and payload.len == 1) return error.CloseWithoutStatus;
 
         var f = Frame{
             // TODO
@@ -92,11 +93,17 @@ pub const Frame = struct {
             f.masking_key[1] = buf[mask_start + 1];
             f.masking_key[2] = buf[mask_start + 2];
             f.masking_key[3] = buf[mask_start + 3];
-            f.unmaskPayload();
+            maskUnmask(&f.masking_key, payload);
         }
-        if ((opcode == .text and f.fragmentation() == .unfragmented) or
-            opcode == .close)
+        if (opcode == .close) {
             try f.assertValidUtf8Payload();
+            try f.assertValidCloseCode();
+        }
+
+        // // TODO samo ako je close
+        // if ((opcode == .text and f.fragmentation() == .unfragmented) or
+        //     opcode == .close)
+        //     try f.assertValidUtf8Payload();
 
         return .{ .bytes = frame_len, .frame = f };
     }
@@ -113,48 +120,43 @@ pub const Frame = struct {
         };
     }
 
-    fn maskPayload(self: *Self) void {
-        maskUnmask(&self.masking_key, self.payload);
-    }
-    fn unmaskPayload(self: *Self) void {
-        maskUnmask(&self.masking_key, self.payload);
-    }
+    // fn maskPayload(self: *Self) void {
+    //     maskUnmask(&self.masking_key, self.payload);
+    // }
+    // fn unmaskPayload(self: *Self) void {
+    //     maskUnmask(&self.masking_key, self.payload);
+    // }
 
-    pub fn echo(self: Self) Frame {
-        var f = Frame{
-            .fin = self.fin,
-            .rsv1 = self.rsv1,
-            .rsv2 = self.rsv2,
-            .rsv3 = self.rsv3,
-            .opcode = self.opcode,
-            .payload = self.payload,
-        };
-        if (f.opcode == .ping) {
-            f.opcode = .pong;
-        }
-        if (f.opcode == .close and !self.isValidCloseCode() and self.payload.len >= 2) {
-            // set close code to 1002 (protocol error) when received invalid close code
-            f.payload[0] = 0x3;
-            f.payload[1] = 0xea;
-        }
-        //if (f.opcode != .ping and f.opcode != .pong)
-        f.setMaskingKey();
-        return f;
-    }
+    // pub fn echo(self: Self) Frame {
+    //     var f = Frame{
+    //         .fin = self.fin,
+    //         .rsv1 = self.rsv1,
+    //         .rsv2 = self.rsv2,
+    //         .rsv3 = self.rsv3,
+    //         .opcode = self.opcode,
+    //         .payload = self.payload,
+    //     };
+    //     if (f.opcode == .ping) {
+    //         f.opcode = .pong;
+    //     }
+    //     if (f.opcode == .close and !self.isValidCloseCode() and self.payload.len >= 2) {
+    //         // set close code to 1002 (protocol error) when received invalid close code
+    //         f.payload[0] = 0x3;
+    //         f.payload[1] = 0xea;
+    //     }
+    //     //if (f.opcode != .ping and f.opcode != .pong)
+    //     f.setMaskingKey();
+    //     return f;
+    // }
 
-    const EncodeResult = union(enum) {
-        required_bytes: usize,
-        bytes: usize,
-    };
-
-    pub fn encode(self: *Self, buf: []u8) EncodeResult {
+    pub fn encode(self: Self, buf: []u8) usize {
         const payload_len: u64 = self.payload.len;
         const payload_bytes = payloadBytes(payload_len);
 
-        const buf_len: usize = 1 + payload_bytes + payload_len;
-        if (buf.len < buf_len) {
-            return .{ .required_bytes = buf_len };
-        }
+        const required_buf_len: usize = 1 + payload_bytes +
+            if (self.mask == 1) 4 else 0 +
+            payload_len;
+        assert(buf.len >= required_buf_len);
 
         buf[0] = (@intCast(u8, self.fin) << 7) +
             (@intCast(u8, self.rsv1) << 6) +
@@ -186,7 +188,48 @@ pub const Frame = struct {
         std.mem.copy(u8, buf[offset..], self.payload);
         maskUnmask(&self.masking_key, buf[offset .. offset + self.payload.len]);
 
-        return .{ .bytes = self.payload.len + offset };
+        return self.payload.len + offset;
+    }
+
+    pub fn msg(fin: u1, opcode: Opcode, payload: []const u8) Self {
+        var frame = Frame{ .fin = fin, .opcode = opcode, .payload = payload };
+        frame.setMaskingKey();
+        return frame;
+    }
+
+    // TODO vidi sto sve treba biti const
+    // TODO izbaci utf8 ovdje to je na message
+    pub fn encodePong(buf: []u8, payload: []const u8) usize {
+        assert(payload.len < 126);
+        assert(buf.len >= 126 + 6);
+
+        buf[0] = 0x8a;
+        buf[1] = 0x80 + @intCast(u8, payload.len);
+        var masking_key: [4]u8 = undefined;
+        rnd.random().bytes(&masking_key);
+        std.mem.copy(u8, buf[2..6], &masking_key);
+        if (payload.len > 0) {
+            std.mem.copy(u8, buf[6..], payload);
+            maskUnmask(&masking_key, buf[6..]);
+        }
+        return 6 + payload.len;
+    }
+
+    pub fn encodeClose(buf: []u8, code: u16, payload: []const u8) usize {
+        assert(payload.len < 124);
+        assert(buf.len >= 126 + 6);
+
+        buf[0] = 0x88;
+        buf[1] = 0x80 + @intCast(u8, payload.len) + 2;
+
+        var masking_key: [4]u8 = undefined;
+        rnd.random().bytes(&masking_key);
+        std.mem.copy(u8, buf[2..6], &masking_key);
+
+        std.mem.writeInt(u16, buf[6..8], code, .Big);
+        if (payload.len > 0) std.mem.copy(u8, buf[8..], payload);
+        maskUnmask(&masking_key, buf[6..]);
+        return 8 + payload.len;
     }
 
     fn setMaskingKey(self: *Self) void {
@@ -228,11 +271,17 @@ pub const Frame = struct {
 
     pub fn closeCode(self: Self) u16 {
         if (self.opcode != .close) return 0;
-        if (self.payload.len < 2) return 1000;
+        if (self.payload.len == 1) return 0; //invalid
+        if (self.payload.len == 0) return 1000;
         return std.mem.readIntBig(u16, self.payload[0..2]);
     }
 
-    pub fn isValidCloseCode(self: Self) bool {
+    pub fn closePayload(self: Self) []const u8 {
+        if (self.payload.len > 2) return self.payload[2..];
+        return self.payload[0..0];
+    }
+
+    fn isValidCloseCode(self: Self) bool {
         return switch (self.closeCode()) {
             1000...1003 => true,
             1007...1011 => true,
@@ -240,6 +289,10 @@ pub const Frame = struct {
             4000...4999 => true,
             else => false,
         };
+    }
+
+    fn assertValidCloseCode(self: Self) !void {
+        if (!self.isValidCloseCode()) return error.InvalidCloseCode;
     }
 
     fn assertValidUtf8Payload(self: Self) !void {
@@ -372,30 +425,20 @@ test "maskUnmask" {
     try testing.expectEqualStrings(&payload, "Hello");
 }
 
-test "encode" {
-    var hello = [_]u8{ 0x81, 0x05, 0x48, 0x65, 0x6c, 0x6c, 0x6f };
-    var rsp = try Frame.decode(&hello);
-    try testing.expectEqual(rsp.bytes, 7);
-    var f = rsp.frame.?;
-    var ef = f.echo();
+// test "encode" {
+//     var hello = [_]u8{ 0x81, 0x05, 0x48, 0x65, 0x6c, 0x6c, 0x6f };
+//     var rsp = try Frame.decode(&hello);
+//     try testing.expectEqual(rsp.bytes, 7);
+//     var f = rsp.frame.?;
+//     var ef = f.echo();
 
-    var buf: [16]u8 = undefined;
-    var offset = ef.encode(&buf).bytes;
+//     var buf: [16]u8 = undefined;
+//     var offset = ef.encode(&buf);
 
-    var payload = buf[offset - 5 .. offset];
-    maskUnmask(&ef.masking_key, payload);
-    try testing.expectEqualStrings(payload, "Hello");
-
-    // for (buf[0..@intCast(usize, offset)]) |b|
-    //     std.debug.print("{x:0>2} ", .{b});
-    // var close = [_]u8{ 0x88, 0x02, 0x03, 0xe8 };
-    // fr = try Frame.decode(&close);
-    // f = fr[1];
-    // try testing.expectEqual(f.opcode, .close);
-    // ef = f.echo();
-    // offset = @intCast(usize, ef.encode(&buf));
-    // try testing.expectEqualSlices(u8, buf[0..offset], &close);
-}
+//     var payload = buf[offset - 5 .. offset];
+//     maskUnmask(&ef.masking_key, payload);
+//     try testing.expectEqualStrings(payload, "Hello");
+// }
 
 test "close status codes" {
     var buf = [_]u8{ 0x88, 0x02, 0x03, 0xe8 };

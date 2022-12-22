@@ -338,9 +338,19 @@ pub fn Client(comptime StreamType: type) type {
             while (true) {
                 var frame = try self.decodeFrame();
                 if (frame.isControl()) {
-                    // TODO: send pong on ping, close on close, ignore pong
-                    try self.echoFrame(frame);
-                    if (frame.opcode == .close) return null;
+                    switch (frame.opcode) {
+                        .ping => {
+                            const bytes = Frame.encodePong(self.write_buf, frame.payload);
+                            try self.write(self.write_buf[0..bytes]);
+                        },
+                        .close => {
+                            const bytes = Frame.encodeClose(self.write_buf, frame.closeCode(), frame.closePayload());
+                            try self.write(self.write_buf[0..bytes]);
+                            return null;
+                        },
+                        .pong => {},
+                        else => unreachable,
+                    }
                     continue;
                 }
                 if (frame.fin == 1) self.lwm += self.consumed;
@@ -389,6 +399,21 @@ pub fn Client(comptime StreamType: type) type {
         }
 
         pub fn readMessage(self: *Self) ?Message {
+            if (self.framesToMessage()) |msg| {
+                if (msg.encoding == .text) {
+                    // validate text payload as valid utf8
+                    if (!std.unicode.utf8ValidateSlice(msg.payload)) {
+                        self.err = error.InvalidUtf8Payload;
+                        self.stream.close();
+                        return null;
+                    }
+                }
+                return msg;
+            }
+            return null;
+        }
+
+        fn framesToMessage(self: *Self) ?Message {
             var buf: []u8 = undefined;
             var len: usize = 0;
             var encoding: MsgEncoding = .text;
@@ -396,11 +421,13 @@ pub fn Client(comptime StreamType: type) type {
             if (self.readFrame()) |frame| {
                 encoding = if (frame.opcode == .binary) .binary else .text;
                 if (frame.isFin()) {
+                    // if single frame return frame payload
                     return Message{
                         .encoding = encoding,
                         .payload = frame.payload,
                     };
                 }
+                // remember position of the frame payload in read_buf
                 len = frame.payload.len;
                 buf = self.read_buf[self.consumed - len ..];
             } else {
@@ -408,6 +435,7 @@ pub fn Client(comptime StreamType: type) type {
             }
 
             while (self.readFrame()) |frame| {
+                // append frame payload to the end of last frame payload
                 std.mem.copy(u8, buf[len..], frame.payload);
                 len += frame.payload.len;
                 if (frame.isFin()) {
@@ -420,11 +448,40 @@ pub fn Client(comptime StreamType: type) type {
             return null;
         }
 
-        pub fn echoMsg(self: *Self, msg: Msg) !void {
-            for (msg.frames) |frame| {
-                try self.echoFrame(frame);
+        pub fn sendMessage(self: *Self, msg: Message) !void {
+            var sent_payload: usize = 0;
+            // send multiple frames if needed
+            while (true) {
+                var fin: u1 = 1;
+                // use frame payload that fits into write_buf
+                var frame_payload = msg.payload[sent_payload..];
+                if (frame_payload.len + Frame.max_header > self.write_buf.len) {
+                    frame_payload = frame_payload[0 .. self.write_buf.len - Frame.max_header];
+                    fin = 0;
+                }
+                // set opcode for the first frame
+                const opcode = if (sent_payload == 0)
+                    if (msg.encoding == .text) Frame.Opcode.text else Frame.Opcode.binary
+                else
+                    Frame.Opcode.continuation;
+                // create frame
+                const frame = Frame.msg(fin, opcode, frame_payload);
+                // encode frame into write_buf and send it to stream
+                const bytes = frame.encode(self.write_buf);
+                try self.write(self.write_buf[0..bytes]);
+                // loop if something is left
+                sent_payload += frame_payload.len;
+                if (sent_payload >= msg.payload.len) {
+                    break;
+                }
             }
         }
+
+        // pub fn echoMsg(self: *Self, msg: Msg) !void {
+        //     for (msg.frames) |frame| {
+        //         try self.echoFrame(frame);
+        //     }
+        // }
 
         fn unconsumedReadBuf(self: *Self) []u8 {
             return self.read_buf[self.consumed..self.hwm];
@@ -459,21 +516,21 @@ pub fn Client(comptime StreamType: type) type {
             if (!frame.isControl()) self.last_frame_fragmentation = frame.fragmentation();
         }
 
-        pub fn echoFrame(self: *Self, frame: Frame) !void {
-            if (frame.opcode == .pong) return;
+        // pub fn echoFrame(self: *Self, frame: Frame) !void {
+        //     if (frame.opcode == .pong) return;
 
-            var echo_frame = frame.echo();
-            const encode_rsp = echo_frame.encode(self.write_buf);
-            switch (encode_rsp) {
-                .required_bytes => |_| {
-                    // std.log.err("write buf len: {d}, required: {d}", .{ self.write_buf.len, rb });
-                    return error.WriteBufferOverflow;
-                },
-                .bytes => |b| {
-                    try self.write(self.write_buf[0..b]);
-                },
-            }
-        }
+        //     var echo_frame = frame.echo();
+        //     const encode_rsp = echo_frame.encode(self.write_buf);
+        //     switch (encode_rsp) {
+        //         .required_bytes => |_| {
+        //             // std.log.err("write buf len: {d}, required: {d}", .{ self.write_buf.len, rb });
+        //             return error.WriteBufferOverflow;
+        //         },
+        //         .bytes => |b| {
+        //             try self.write(self.write_buf[0..b]);
+        //         },
+        //     }
+        // }
 
         fn write(self: *Self, buf: []const u8) !void {
             var bytes_written: usize = 0;
