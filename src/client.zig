@@ -289,10 +289,6 @@ pub fn Client(comptime StreamType: type) type {
             while (bytes_written < buf.len)
                 bytes_written += try self.stream.write(buf);
         }
-
-        pub fn close(self: *Self) void {
-            self.stream.close();
-        }
     };
 }
 
