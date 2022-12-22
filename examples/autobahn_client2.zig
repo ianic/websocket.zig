@@ -29,7 +29,7 @@ pub fn main() !void {
     std.debug.print("\n", .{});
 }
 
-const Client = ws.tcpClient;
+const Client = ws.TcpClient;
 
 fn runTestCase(read_buf: []u8, write_buf: []u8, no: usize, allocator: std.mem.Allocator) !void {
     var path_buf: [128]u8 = undefined;

@@ -4,6 +4,7 @@ const assert = std.debug.assert;
 const ascii = std.ascii;
 const mem = std.mem;
 const fmt = std.fmt;
+const builtin = @import("builtin");
 
 const WS_MAGIC_KEY = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 var base64Encoder = std.base64.standard.Encoder;
@@ -12,6 +13,10 @@ var rnd = std.rand.DefaultPrng.init(0);
 pub const Frame = @import("frame.zig").Frame;
 
 fn secKey() [24]u8 {
+    if (builtin.is_test) {
+        return "3yMLSWFdF1MH1YDDPW/aYQ==".*;
+    }
+
     var buf: [16]u8 = undefined;
     var ret: [24]u8 = undefined;
     rnd.random().bytes(&buf);
@@ -22,7 +27,7 @@ fn secKey() [24]u8 {
 
 test "random secKey" {
     try testing.expectEqualStrings("3yMLSWFdF1MH1YDDPW/aYQ==", &secKey());
-    try testing.expectEqualStrings("/Hua7JHfD1waXr47jL/uAg==", &secKey());
+    //try testing.expectEqualStrings("/Hua7JHfD1waXr47jL/uAg==", &secKey());
 }
 
 fn secAccept(key: []const u8) [28]u8 {
@@ -197,7 +202,7 @@ test "request" {
     var hs = Handshake.init("127.0.0.1:9001");
     const request = try hs.request(&buf, "/pero");
 
-    const expected = "GET ws://127.0.0.1:9001/pero HTTP/1.1\r\nHost: 127.0.0.1:9001\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: 6l5Kr+sEyn6ajfBXd8NDBQ==\r\nSec-WebSocket-Version: 13\r\n\r\n";
+    const expected = "GET ws://127.0.0.1:9001/pero HTTP/1.1\r\nHost: 127.0.0.1:9001\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: 3yMLSWFdF1MH1YDDPW/aYQ==\r\nSec-WebSocket-Version: 13\r\n\r\n";
     try testing.expectEqualStrings(request, expected);
 }
 
@@ -227,9 +232,9 @@ pub const Handshake = struct {
 const net = std.x.net;
 const tcp = net.tcp;
 
-pub const tcpClient = Client(TcpClient);
+pub const TcpClient = Client(TcpStream);
 
-pub const TcpClient = struct {
+pub const TcpStream = struct {
     client: tcp.Client,
 
     const Self = @This();
@@ -384,7 +389,7 @@ pub fn Client(comptime StreamType: type) type {
         }
 
         pub fn readMessage(self: *Self) ?Message {
-            var start_pos: usize = 0;
+            var buf: []u8 = undefined;
             var len: usize = 0;
             var encoding: MsgEncoding = .text;
 
@@ -392,23 +397,23 @@ pub fn Client(comptime StreamType: type) type {
                 encoding = if (frame.opcode == .binary) .binary else .text;
                 if (frame.isFin()) {
                     return Message{
-                        .encoding = .encoding,
+                        .encoding = encoding,
                         .payload = frame.payload,
                     };
                 }
                 len = frame.payload.len;
-                start_pos = self.consumed - len;
+                buf = self.read_buf[self.consumed - len ..];
             } else {
                 return null;
             }
 
             while (self.readFrame()) |frame| {
-                std.mem.copy(u8, self.read_buf[start_pos..], frame.payload);
+                std.mem.copy(u8, buf[len..], frame.payload);
                 len += frame.payload.len;
                 if (frame.isFin()) {
                     return Message{
-                        .encoding = .encoding,
-                        .payload = self.read_buf[start_pos .. start_pos + len],
+                        .encoding = encoding,
+                        .payload = buf[0..len],
                     };
                 }
             }
@@ -474,6 +479,10 @@ pub fn Client(comptime StreamType: type) type {
             var bytes_written: usize = 0;
             while (bytes_written < buf.len)
                 bytes_written += try self.stream.write(buf);
+        }
+
+        pub fn close(self: *Self) void {
+            self.stream.close();
         }
     };
 }
@@ -569,4 +578,135 @@ test "invalid utf8 message" {
     var m = try testMsgWithFragments(&data, 1);
     try testing.expectError(error.InvalidUtf8Payload, m.assertValidUtf8Payload());
     m.deinit(testing.allocator);
+}
+
+pub const TestStream = struct {
+    read_buf: []const u8,
+    write_buf: []u8,
+
+    read_pos: usize = 0,
+    write_pos: usize = 0,
+    chunk: usize = 128,
+
+    const Self = @This();
+    var input_buf: []const u8 = undefined;
+
+    pub fn init(host: []const u8, port: u16) !Self {
+        _ = port;
+        _ = host;
+
+        const allocator = std.testing.allocator;
+        return Self{ // text frame, fin, payload 1 byte
+            .read_buf = input_buf,
+            .write_buf = try allocator.alloc(u8, 1024),
+        };
+    }
+
+    pub fn read(self: *Self, buf: []u8) !usize {
+        var chunk = self.chunk;
+        if (buf.len < chunk) chunk = buf.len;
+        if (self.read_pos + chunk > self.read_buf.len) chunk = self.read_buf.len - self.read_pos;
+        std.mem.copy(u8, buf, self.read_buf[self.read_pos .. self.read_pos + chunk]);
+        self.read_pos += chunk;
+        return chunk;
+    }
+
+    pub fn write(self: *Self, buf: []const u8) !usize {
+        std.mem.copy(u8, self.write_buf[self.write_pos..], buf);
+        self.write_pos += buf.len;
+        return buf.len;
+    }
+
+    pub fn close(self: *Self) void {
+        const allocator = std.testing.allocator;
+        allocator.free(self.write_buf);
+    }
+};
+
+const testHandshakeResponse = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: WebSocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: 9bQuZIN64KrRsqgxuR1CxYN94zQ=\r\n\r\n";
+
+const TestClient = Client(TestStream);
+
+fn testClientInit() !TestClient {
+    const allocator = std.testing.allocator;
+    const buf_size = 1024;
+    var read_buf = try allocator.alloc(u8, buf_size);
+    var write_buf = try allocator.alloc(u8, buf_size);
+    return try TestClient.init(read_buf, write_buf, "127.0.0.1", 80, "path");
+}
+
+fn testClientDeinit(client: *TestClient) void {
+    const allocator = std.testing.allocator;
+    client.stream.close();
+    allocator.free(client.read_buf);
+    allocator.free(client.write_buf);
+}
+
+test "client handshake" {
+    TestStream.input_buf = testHandshakeResponse;
+    var client = try testClientInit();
+    testClientDeinit(&client);
+}
+
+test "client readFrame" {
+    TestStream.input_buf = testHandshakeResponse[0..] ++ [_]u8{ 0x81, 0x1, 0xa };
+    var client = try testClientInit();
+    defer testClientDeinit(&client);
+
+    var frame = client.readFrame().?;
+    try testing.expectEqual(frame.fin, 1);
+    try testing.expectEqual(frame.opcode, .text);
+    try testing.expectEqual(frame.payload.len, 1);
+    try testing.expectEqual(frame.payload[0], 0xa);
+}
+
+test "client readMessage" {
+    TestStream.input_buf = testHandshakeResponse[0..] ++ [_]u8{ 0x81, 0x1, 0xa };
+    var client = try testClientInit();
+    defer testClientDeinit(&client);
+
+    var msg = client.readMessage().?;
+    try testing.expectEqual(msg.encoding, .text);
+    try testing.expectEqual(msg.payload.len, 1);
+    try testing.expectEqual(msg.payload[0], 0xa);
+}
+
+test "client readMessage fragmented" {
+    TestStream.input_buf = testHandshakeResponse[0..] ++
+        [_]u8{ 0x01, 0x1, 0xa } ++ // first text frame
+        [_]u8{ 0x89, 0x00 } ++ // ping in between
+        [_]u8{ 0x80, 0x1, 0xb }; // last frame
+
+    var client = try testClientInit();
+    defer testClientDeinit(&client);
+
+    var msg = client.readMessage().?;
+    try testing.expectEqual(msg.encoding, .text);
+    try testing.expectEqual(msg.payload.len, 2);
+    try testing.expectEqualSlices(u8, msg.payload, &[_]u8{ 0xa, 0xb });
+    // expect pong message in the write buffer
+    try testing.expectEqualSlices(u8, client.write_buf[0..2], &[_]u8{ 0x8a, 0x80 });
+
+    // output buffer contains handsake and pong
+    // pong is 2 bytes + 4 bytes mask
+    const cs = client.stream;
+    try testing.expectEqual(cs.write_pos, 177);
+    try testing.expectEqualSlices(u8, cs.write_buf[cs.write_pos - 6 .. cs.write_pos - 4], &[_]u8{ 0x8a, 0x80 });
+}
+
+test "client readMessage fragmented in 3 frames" {
+    TestStream.input_buf = testHandshakeResponse[0..] ++
+        [_]u8{ 0x01, 0x1, 0xa } ++ // first text frame
+        [_]u8{ 0x89, 0x00 } ++ // ping in between
+        [_]u8{ 0x00, 0x3, 0xb, 0xc, 0xd } ++ // continuation frame
+        [_]u8{ 0x8a, 0x00 } ++ // pong
+        [_]u8{ 0x80, 0x2, 0xe, 0xf }; // last frame
+
+    var client = try testClientInit();
+    defer testClientDeinit(&client);
+
+    var msg = client.readMessage().?;
+    try testing.expectEqual(msg.encoding, .text);
+    try testing.expectEqual(msg.payload.len, 6);
+    try testing.expectEqualSlices(u8, msg.payload, &[_]u8{ 0xa, 0xb, 0xc, 0xd, 0xe, 0xf });
 }
