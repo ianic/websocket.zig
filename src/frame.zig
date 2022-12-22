@@ -100,11 +100,6 @@ pub const Frame = struct {
             try f.assertValidCloseCode();
         }
 
-        // // TODO samo ako je close
-        // if ((opcode == .text and f.fragmentation() == .unfragmented) or
-        //     opcode == .close)
-        //     try f.assertValidUtf8Payload();
-
         return .{ .bytes = frame_len, .frame = f };
     }
 
@@ -119,35 +114,6 @@ pub const Frame = struct {
             else => return error.ReservedOpcode,
         };
     }
-
-    // fn maskPayload(self: *Self) void {
-    //     maskUnmask(&self.masking_key, self.payload);
-    // }
-    // fn unmaskPayload(self: *Self) void {
-    //     maskUnmask(&self.masking_key, self.payload);
-    // }
-
-    // pub fn echo(self: Self) Frame {
-    //     var f = Frame{
-    //         .fin = self.fin,
-    //         .rsv1 = self.rsv1,
-    //         .rsv2 = self.rsv2,
-    //         .rsv3 = self.rsv3,
-    //         .opcode = self.opcode,
-    //         .payload = self.payload,
-    //     };
-    //     if (f.opcode == .ping) {
-    //         f.opcode = .pong;
-    //     }
-    //     if (f.opcode == .close and !self.isValidCloseCode() and self.payload.len >= 2) {
-    //         // set close code to 1002 (protocol error) when received invalid close code
-    //         f.payload[0] = 0x3;
-    //         f.payload[1] = 0xea;
-    //     }
-    //     //if (f.opcode != .ping and f.opcode != .pong)
-    //     f.setMaskingKey();
-    //     return f;
-    // }
 
     pub fn encode(self: Self, buf: []u8) usize {
         const payload_len: u64 = self.payload.len;
@@ -197,8 +163,6 @@ pub const Frame = struct {
         return frame;
     }
 
-    // TODO vidi sto sve treba biti const
-    // TODO izbaci utf8 ovdje to je na message
     pub fn encodePong(buf: []u8, payload: []const u8) usize {
         assert(payload.len < 126);
         assert(buf.len >= 126 + 6);

@@ -29,14 +29,12 @@ pub fn main() !void {
     std.debug.print("\n", .{});
 }
 
-const Client = ws.TcpClient;
-
 fn runTestCase(read_buf: []u8, write_buf: []u8, no: usize, allocator: std.mem.Allocator) !void {
     _ = allocator;
     var path_buf: [128]u8 = undefined;
     const path = try std.fmt.bufPrint(&path_buf, "/runCase?case={d}&agent=websocket.zig", .{no});
 
-    var client = try Client.init(read_buf, write_buf, "127.0.0.1", 9001, path);
+    var client = try ws.Client.init(read_buf, write_buf, "127.0.0.1", 9001, path);
     defer client.close();
 
     while (client.readMessage()) |msg| {
