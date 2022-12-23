@@ -1,8 +1,10 @@
 const std = @import("std");
-const testing = std.testing;
-const assert = std.debug.assert;
 const io = std.io;
-const Allocator = std.mem.Allocator;
+const mem = std.mem;
+
+const assert = std.debug.assert;
+const Allocator = mem.Allocator;
+const utf8ValidateSlice = std.unicode.utf8ValidateSlice;
 
 pub const Frame = struct {
     pub const Opcode = enum(u4) {
@@ -42,7 +44,7 @@ pub const Frame = struct {
         if (self.opcode != .close) return 0;
         if (self.payload.len == 1) return 0; //invalid
         if (self.payload.len == 0) return 1000;
-        return std.mem.readIntBig(u16, self.payload[0..2]);
+        return mem.readIntBig(u16, self.payload[0..2]);
     }
 
     pub fn closePayload(self: Self) []const u8 {
@@ -62,7 +64,7 @@ pub const Frame = struct {
 
     fn assertValid(self: Self) !void {
         if (self.opcode == .close) {
-            if (!std.unicode.utf8ValidateSlice(self.closePayload())) return error.InvalidUtf8Payload;
+            if (!utf8ValidateSlice(self.closePayload())) return error.InvalidUtf8Payload;
             try self.assertValidCloseCode();
         }
     }
@@ -76,7 +78,7 @@ pub const Frame = struct {
     }
 };
 
-pub fn Client(comptime StreamType: type) type {
+pub fn Stream(comptime StreamType: type) type {
     return struct {
         stream: StreamType,
         allocator: Allocator,
@@ -133,41 +135,46 @@ fn maskUnmask(mask: []const u8, buf: []u8) void {
         buf[i] = c ^ mask[i % 4];
 }
 
-pub fn client(underlying_stream: anytype, allocator: Allocator) Client(@TypeOf(underlying_stream)) {
+pub fn stream(underlying_stream: anytype, allocator: Allocator) Stream(@TypeOf(underlying_stream)) {
     return .{
         .stream = underlying_stream,
         .allocator = allocator,
     };
 }
 
+const testing = std.testing;
+const expectEqual = testing.expectEqual;
+const expectEqualSlices = testing.expectEqualSlices;
+const expectError = testing.expectError;
+
 test "close frame" {
     var input = [_]u8{ 0x88, 0x02, 0x03, 0xe8 };
-    var cli = client(io.fixedBufferStream(&input), testing.allocator);
-    const frame = try cli.readFrame();
+    var stm = stream(io.fixedBufferStream(&input), testing.allocator);
+    const frame = try stm.readFrame();
     defer frame.deinit();
 
-    try testing.expectEqual(frame.opcode, .close);
-    try testing.expectEqual(frame.fin, 1);
-    try testing.expectEqual(frame.payload.len, 2);
-    try testing.expectEqualSlices(u8, frame.payload, input[2..4]);
-    try testing.expectEqual(frame.closeCode(), 1000);
-    try testing.expectError(error.EndOfStream, cli.readFrame());
+    try expectEqual(frame.opcode, .close);
+    try expectEqual(frame.fin, 1);
+    try expectEqual(frame.payload.len, 2);
+    try expectEqualSlices(u8, frame.payload, input[2..4]);
+    try expectEqual(frame.closeCode(), 1000);
+    try expectError(error.EndOfStream, stm.readFrame());
 }
 
 test "masked close frame with payload" {
     var input = [_]u8{ 0x88, 0x87, 0xa, 0xb, 0xc, 0xd, 0x09, 0xe2, 0x0d, 0x0f, 0x09, 0x0f, 0x09 };
-    var cli = client(io.fixedBufferStream(&input), testing.allocator);
-    const frame = try cli.readFrame();
+    var stm = stream(io.fixedBufferStream(&input), testing.allocator);
+    const frame = try stm.readFrame();
     defer frame.deinit();
 
     const expected_payload = [_]u8{ 0x3, 0xe9, 0x1, 0x2, 0x3, 0x4, 0x5 };
 
-    try testing.expectEqual(frame.opcode, .close);
-    try testing.expectEqual(frame.fin, 1);
-    try testing.expectEqual(frame.payload.len, 7);
-    try testing.expectEqualSlices(u8, frame.payload, &expected_payload);
-    try testing.expectEqual(frame.closeCode(), 1001);
-    try testing.expectError(error.EndOfStream, cli.readFrame());
+    try expectEqual(frame.opcode, .close);
+    try expectEqual(frame.fin, 1);
+    try expectEqual(frame.payload.len, 7);
+    try expectEqualSlices(u8, frame.payload, &expected_payload);
+    try expectEqual(frame.closeCode(), 1001);
+    try expectError(error.EndOfStream, stm.readFrame());
 }
 
 test "bit stratch" {
