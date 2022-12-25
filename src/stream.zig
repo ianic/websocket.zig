@@ -98,6 +98,10 @@ pub const Frame = struct {
         return self.fin == 1;
     }
 
+    pub fn isControl(self: *Self) bool {
+        return self.opcode.isControl();
+    }
+
     pub fn deinit(self: *Self) void {
         if (self.allocator) |a|
             a.free(self.payload);
@@ -110,7 +114,7 @@ pub const Frame = struct {
         end,
     };
 
-    pub fn fragmentation(self: *Self) Fragment {
+    pub fn fragment(self: *Self) Fragment {
         if (self.fin == 1) {
             if (self.opcode == .continuation) return .end else return .unfragmented;
         } else {
@@ -118,17 +122,17 @@ pub const Frame = struct {
         }
     }
 
-    pub fn isValidContinuation(self: *Self, prev: Fragment) bool {
+    fn isValidContinuation(self: *Self, prev: Fragment) bool {
         if (self.isControl()) return true;
-        const curr = self.fragmentation();
+        const curr = self.fragment();
         return switch (prev) {
             .unfragmented, .end => curr == .unfragmented or curr == .start,
             .start, .fragment => curr == .fragment or curr == .end,
         };
     }
 
-    pub fn isControl(self: *Self) bool {
-        return self.opcode.isControl();
+    fn assertValidContinuation(self: *Self, prev: Fragment) !void {
+        if (!self.isValidContinuation(prev)) return error.InvalidFragmentation;
     }
 
     pub fn encode(self: Self, buf: []u8, close_code: u16) usize {
@@ -195,6 +199,11 @@ pub const Frame = struct {
         if (len < 65536) return 3;
         return 9;
     }
+
+    fn maskUnmask(mask: []const u8, buf: []u8) void {
+        for (buf) |c, i|
+            buf[i] = c ^ mask[i % 4];
+    }
 };
 
 pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
@@ -205,7 +214,7 @@ pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
         allocator: Allocator,
         err: ?anyerror = null,
 
-        last_frame_fragmentation: Frame.Fragment = .unfragmented,
+        last_frame_fragment: Frame.Fragment = .unfragmented,
 
         const Self = @This();
 
@@ -216,8 +225,8 @@ pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
                     defer frame.deinit();
                     try self.handleControlFrame(&frame);
                 } else {
-                    if (!frame.isValidContinuation(self.last_frame_fragmentation)) return error.InvalidFragmentation;
-                    self.last_frame_fragmentation = frame.fragmentation();
+                    try frame.assertValidContinuation(self.last_frame_fragment);
+                    self.last_frame_fragment = frame.fragment();
                     return frame;
                 }
             }
@@ -225,9 +234,7 @@ pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
 
         fn handleControlFrame(self: *Self, frame: *Frame) !void {
             switch (frame.opcode) {
-                .ping => {
-                    try self.writer.pong(frame.payload);
-                },
+                .ping => try self.writer.pong(frame.payload),
                 .close => {
                     try self.writer.close(frame.closeCode(), frame.closePayload());
                     return error.EndOfStream;
@@ -324,7 +331,7 @@ pub fn Reader(comptime ReaderType: type) type {
             if (masked) try self.readAll(&masking_key);
             var payload = try self.allocator.alloc(u8, payload_len);
             try self.readAll(payload);
-            if (masked) maskUnmask(&masking_key, payload);
+            if (masked) Frame.maskUnmask(&masking_key, payload);
             return payload;
         }
 
@@ -433,11 +440,6 @@ pub fn Writer(comptime WriterType: type) type {
             self.allocator.free(self.buf);
         }
     };
-}
-
-fn maskUnmask(mask: []const u8, buf: []u8) void {
-    for (buf) |c, i|
-        buf[i] = c ^ mask[i % 4];
 }
 
 fn reader(inner_reader: anytype, allocator: Allocator) Reader(@TypeOf(inner_reader)) {
@@ -579,7 +581,7 @@ test "writer pong with payload" {
 
     try expectEqual(writer_stm.pos, 11); // pong header (2 bytes) + mask (4 bytes) + payload (5 bytes)
     try testing.expectEqualSlices(u8, output[0..2], &[_]u8{ 0x8a, 0x85 });
-    maskUnmask(output[2..6], output[6 .. 6 + payload.len]);
+    Frame.maskUnmask(output[2..6], output[6 .. 6 + payload.len]);
     try testing.expectEqualSlices(u8, output[6 .. 6 + payload.len], payload);
 }
 
@@ -593,7 +595,7 @@ test "writer close with payload" {
 
     try expectEqual(writer_stm.pos, 13); // pong header (2 bytes) + mask (4 bytes) + code (2 bytes) + payload (5 bytes)
     try testing.expectEqualSlices(u8, output[0..2], &[_]u8{ 0x88, 0x87 });
-    maskUnmask(output[2..6], output[6 .. 8 + payload.len]);
+    Frame.maskUnmask(output[2..6], output[6 .. 8 + payload.len]);
     try testing.expectEqualSlices(u8, output[8 .. 8 + payload.len], payload);
 }
 
@@ -607,7 +609,7 @@ test "writer message" {
 
     try expectEqual(writer_stm.pos, 17); // pong header (2 bytes) + mask (4 bytes) +  payload (11 bytes)
     try testing.expectEqualSlices(u8, output[0..2], &[_]u8{ 0x81, 0x8B });
-    maskUnmask(output[2..6], output[6 .. 6 + payload.len]);
+    Frame.maskUnmask(output[2..6], output[6 .. 6 + payload.len]);
     try testing.expectEqualSlices(u8, output[6 .. 6 + payload.len], payload);
 }
 
