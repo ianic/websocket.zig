@@ -21,8 +21,7 @@ pub const Message = struct {
     const Self = @This();
 
     pub fn deinit(self: *Self) void {
-        if (self.allocator) |a|
-            a.free(self.payload);
+        if (self.allocator) |a| a.free(self.payload);
     }
 };
 
@@ -87,11 +86,19 @@ pub const Frame = struct {
         };
     }
 
-    fn assertValid(self: *Self) !void {
-        if (self.opcode == .close) {
-            if (!utf8ValidateSlice(self.closePayload())) return error.InvalidUtf8Payload;
-            try self.assertValidCloseCode();
-        }
+    pub fn assertValid(self: *Self) !void {
+        if (self.isControl) try self.assertValidControl();
+        if (self.opcode == .close) try self.assertValidClose();
+    }
+
+    fn assertValidClose(self: *Self) !void {
+        if (!utf8ValidateSlice(self.closePayload())) return error.InvalidUtf8Payload;
+        try self.assertValidCloseCode();
+    }
+
+    fn assertValidControl(self: *Self) !void {
+        if (self.payload.len > 125) return error.TooBigPayloadForControlFrame;
+        if (self.fin == 0) return error.FragmentedControlFrame;
     }
 
     pub fn isFin(self: *Self) bool {
@@ -103,8 +110,7 @@ pub const Frame = struct {
     }
 
     pub fn deinit(self: *Self) void {
-        if (self.allocator) |a|
-            a.free(self.payload);
+        if (self.allocator) |a| a.free(self.payload);
     }
 
     pub const Fragment = enum {
@@ -139,9 +145,11 @@ pub const Frame = struct {
         const payload_len: u64 = if (self.opcode == .close) self.payload.len + 2 else self.payload.len;
         const payload_bytes = payloadBytes(payload_len);
         const masked = self.mask == 1;
+        const is_close = self.opcode == .close;
 
         const required_buf_len: usize = 1 + payload_bytes +
             if (masked) 4 else 0 +
+            if (is_close) 2 else 0 +
             payload_len;
         assert(buf.len >= required_buf_len);
 
@@ -175,7 +183,7 @@ pub const Frame = struct {
         }
         const payload_start = offset;
         var payload_end = payload_start + self.payload.len;
-        if (self.opcode == .close) {
+        if (is_close) {
             const cc = if (close_code == 0) default_close_code else close_code;
             std.mem.writeIntSliceBig(u16, buf[offset .. offset + 2], cc);
             offset += 2;
@@ -346,9 +354,8 @@ pub fn Reader(comptime ReaderType: type) type {
             const opcode = try self.readOpcode();
             const mask = try self.readBit();
             const payload_len = try self.readPayloadLen();
-            if (opcode.isControl()) try assertValidControlFrame(payload_len, fin);
-
             var payload = try self.readPayload(payload_len, mask == 1);
+
             var frm = Frame{
                 .fin = fin,
                 .mask = mask,
@@ -358,11 +365,6 @@ pub fn Reader(comptime ReaderType: type) type {
             };
             try frm.assertValid();
             return frm;
-        }
-
-        fn assertValidControlFrame(payload_len: u64, fin: u1) !void {
-            if (payload_len > 125) return error.TooBigPayloadForControlFrame;
-            if (fin == 0) return error.FragmentedControlFrame;
         }
     };
 }
