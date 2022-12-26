@@ -206,7 +206,7 @@ pub fn ClientHandshake(comptime ReaderType: type, comptime WriterType: type) typ
 
         const Self = @This();
 
-        pub fn init(reader: ReaderType, writer: WriterType, allocator: Allocator) Self {
+        pub fn init(allocator: Allocator, reader: ReaderType, writer: WriterType) Self {
             return .{
                 .reader = reader,
                 .writer = writer,
@@ -316,12 +316,12 @@ pub fn ClientHandshake(comptime ReaderType: type, comptime WriterType: type) typ
     };
 }
 
-fn initClientHandshake(reader: anytype, writer: anytype, allocator: Allocator) ClientHandshake(@TypeOf(reader), @TypeOf(writer)) {
-    return ClientHandshake(@TypeOf(reader), @TypeOf(writer)).init(reader, writer, allocator);
+fn initClientHandshake(allocator: Allocator, reader: anytype, writer: anytype) ClientHandshake(@TypeOf(reader), @TypeOf(writer)) {
+    return ClientHandshake(@TypeOf(reader), @TypeOf(writer)).init(allocator, reader, writer);
 }
 
 pub fn clientHandshake(allocator: Allocator, reader: anytype, writer: anytype, host: []const u8, path: []const u8) !void {
-    var cs = initClientHandshake(reader, writer, allocator);
+    var cs = initClientHandshake(allocator, reader, writer);
     defer cs.deinit();
     try cs.writeRequest(host, path);
     try cs.assertValidResponse();
@@ -339,7 +339,7 @@ test "parse response" {
         \\
     ;
     var stm = testingStream(http_server_response, 1024).init();
-    var cs = initClientHandshake(stm.reader(), stm.writer(), testing.allocator);
+    var cs = initClientHandshake(testing.allocator, stm.reader(), stm.writer());
     defer cs.deinit();
 
     var rsp = try cs.parseResponse();
