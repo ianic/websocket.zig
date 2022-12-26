@@ -327,21 +327,19 @@ pub fn clientHandshake(allocator: Allocator, reader: anytype, writer: anytype, h
     try cs.assertValidResponse();
 }
 
-const fixture_response =
-    \\HTTP/1.1 101 Switching Protocols
-    \\Upgrade: websocket
-    \\Connection: Upgrade
-    \\Sec-WebSocket-Accept: 9bQuZIN64KrRsqgxuR1CxYN94zQ=
-    \\
-    \\
-;
-//const rspWithCR = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n";
+const testingStream = @import("fixed_buffers_stream.zig").testingStream;
 
 test "parse response" {
-    var output: [1024]u8 = undefined;
-    var reader_stm = io.fixedBufferStream(&fixture_response.*);
-    var writer_stm = io.fixedBufferStream(&output);
-    var cs = initClientHandshake(reader_stm.reader(), writer_stm.writer(), testing.allocator);
+    const http_server_response =
+        \\HTTP/1.1 101 Switching Protocols
+        \\Upgrade: websocket
+        \\Connection: Upgrade
+        \\Sec-WebSocket-Accept: 9bQuZIN64KrRsqgxuR1CxYN94zQ=
+        \\
+        \\
+    ;
+    var stm = testingStream(http_server_response, 1024).init();
+    var cs = initClientHandshake(stm.reader(), stm.writer(), testing.allocator);
     defer cs.deinit();
 
     var rsp = try cs.parseResponse();
@@ -365,12 +363,9 @@ test "valid ws handshake" {
         "Sec-WebSocket-Key: 3yMLSWFdF1MH1YDDPW/aYQ==\r\n" ++
         "Sec-WebSocket-Version: 13\r\n\r\n";
 
-    var output: [1024]u8 = undefined;
-    var reader_stm = io.fixedBufferStream(&input.*);
-    var writer_stm = io.fixedBufferStream(&output);
-
-    try clientHandshake(testing.allocator, reader_stm.reader(), writer_stm.writer(), "ws.example.com", "/ws");
-    try testing.expectEqualSlices(u8, output[0..writer_stm.pos], &expected_output.*);
+    var stm = testingStream(input, 1024).init();
+    try clientHandshake(testing.allocator, stm.reader(), stm.writer(), "ws.example.com", "/ws");
+    try testing.expectEqualSlices(u8, stm.written(), &expected_output.*);
 }
 
 // debug helper
