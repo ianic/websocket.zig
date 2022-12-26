@@ -87,7 +87,7 @@ pub const Frame = struct {
     }
 
     pub fn assertValid(self: *Self) !void {
-        if (self.isControl) try self.assertValidControl();
+        if (self.isControl()) try self.assertValidControl();
         if (self.opcode == .close) try self.assertValidClose();
     }
 
@@ -282,6 +282,10 @@ pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
             }
         }
 
+        pub fn sendMessage(self: *Self, msg: Message) !void {
+            try self.writer.message(msg);
+        }
+
         fn initMessage(self: *Self, encoding: Message.Encoding, payload: []const u8) !Message {
             if (encoding == .text)
                 if (!utf8ValidateSlice(payload)) return error.InvalidUtf8Payload;
@@ -321,7 +325,7 @@ pub fn Reader(comptime ReaderType: type) type {
             var payload_len = try self.bit_reader.readBitsNoEof(u64, 7);
             return switch (payload_len) {
                 126 => try self.bit_reader.readBitsNoEof(u64, 8 * 2),
-                127 => try self.bit_reader.readBitsNoEof(u64, 8 * 4),
+                127 => try self.bit_reader.readBitsNoEof(u64, 8 * 8),
                 else => payload_len,
             };
         }
