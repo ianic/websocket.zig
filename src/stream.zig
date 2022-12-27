@@ -307,10 +307,10 @@ pub fn Reader(comptime ReaderType: type) type {
 
         const Self = @This();
 
-        pub fn init(inner_reader: ReaderType, allocator: Allocator) Self {
+        pub fn init(allocator: Allocator, inner_reader: ReaderType) Self {
             return .{
-                .bit_reader = io.bitReader(.Big, inner_reader),
                 .allocator = allocator,
+                .bit_reader = io.bitReader(.Big, inner_reader),
             };
         }
 
@@ -383,11 +383,11 @@ pub fn Writer(comptime WriterType: type) type {
 
         const writer_buffer_len = 4096;
 
-        pub fn init(inner_writer: WriterType, allocator: Allocator) !Self {
+        pub fn init(allocator: Allocator, inner_writer: WriterType) !Self {
             return .{
-                .writer = inner_writer,
                 .allocator = allocator,
                 .buf = try allocator.alloc(u8, writer_buffer_len),
+                .writer = inner_writer,
             };
         }
 
@@ -448,19 +448,19 @@ pub fn Writer(comptime WriterType: type) type {
     };
 }
 
-fn reader(inner_reader: anytype, allocator: Allocator) Reader(@TypeOf(inner_reader)) {
-    return Reader(@TypeOf(inner_reader)).init(inner_reader, allocator);
+fn reader(allocator: Allocator, inner_reader: anytype) Reader(@TypeOf(inner_reader)) {
+    return Reader(@TypeOf(inner_reader)).init(allocator, inner_reader);
 }
 
-fn writer(inner_writer: anytype, allocator: Allocator) !Writer(@TypeOf(inner_writer)) {
-    return try Writer(@TypeOf(inner_writer)).init(inner_writer, allocator);
+fn writer(allocator: Allocator, inner_writer: anytype) !Writer(@TypeOf(inner_writer)) {
+    return try Writer(@TypeOf(inner_writer)).init(allocator, inner_writer);
 }
 
-pub fn stream(inner_reader: anytype, inner_writer: anytype, allocator: Allocator) !Stream(@TypeOf(inner_reader), @TypeOf(inner_writer)) {
+pub fn stream(allocator: Allocator, inner_reader: anytype, inner_writer: anytype) !Stream(@TypeOf(inner_reader), @TypeOf(inner_writer)) {
     return .{
         .allocator = allocator,
-        .reader = reader(inner_reader, allocator),
-        .writer = try writer(inner_writer, allocator),
+        .reader = reader(allocator, inner_reader),
+        .writer = try writer(allocator, inner_writer),
     };
 }
 
@@ -473,7 +473,7 @@ const testing_stream = @import("testing_stream.zig");
 test "reader read close frame" {
     var input = [_]u8{ 0x88, 0x02, 0x03, 0xe8 };
     var inner_stm = io.fixedBufferStream(&input);
-    var rdr = reader(inner_stm.reader(), testing.allocator);
+    var rdr = reader(testing.allocator, inner_stm.reader());
     var frame = try rdr.frame();
     defer frame.deinit();
 
@@ -488,7 +488,7 @@ test "reader read close frame" {
 test "reader read masked close frame with payload" {
     var input = [_]u8{ 0x88, 0x87, 0xa, 0xb, 0xc, 0xd, 0x09, 0xe2, 0x0d, 0x0f, 0x09, 0x0f, 0x09 };
     var inner_stm = io.fixedBufferStream(&input);
-    var rdr = reader(inner_stm.reader(), testing.allocator);
+    var rdr = reader(testing.allocator, inner_stm.reader());
     var frame = try rdr.frame();
     defer frame.deinit();
 
@@ -511,7 +511,7 @@ const fixture_fragmented_message =
 
 test "read fragmented message" {
     var inner_stm = testing_stream.init(&fixture_fragmented_message);
-    var stm = try stream(inner_stm.reader(), inner_stm.writer(), testing.allocator);
+    var stm = try stream(testing.allocator, inner_stm.reader(), inner_stm.writer());
     defer stm.deinit();
 
     var msg = try stm.readMessage();
@@ -528,7 +528,7 @@ test "read fragmented message" {
 
 test "reader read frames" {
     var fbs = io.fixedBufferStream(&fixture_fragmented_message);
-    var rdr = reader(fbs.reader(), testing.allocator);
+    var rdr = reader(testing.allocator, fbs.reader());
 
     const frames = [_]struct { Frame.Opcode, u1, usize }{
         // opcode, fin, payload_len
@@ -551,7 +551,7 @@ test "reader read frames" {
 
 test "stream read frames" {
     var inner_stm = testing_stream.init(&fixture_fragmented_message);
-    var stm = try stream(inner_stm.reader(), inner_stm.writer(), testing.allocator);
+    var stm = try stream(testing.allocator, inner_stm.reader(), inner_stm.writer());
     defer stm.deinit();
 
     const frames = [_]struct { Frame.Opcode, u1, usize }{
@@ -577,7 +577,7 @@ test "stream read frames" {
 test "writer pong with payload" {
     var output: [128]u8 = undefined;
     var writer_stm = io.fixedBufferStream(&output);
-    var w = try writer(writer_stm.writer(), testing.allocator);
+    var w = try writer(testing.allocator, writer_stm.writer());
     defer w.deinit();
     const payload = "hello";
     try w.pong(payload);
@@ -591,7 +591,7 @@ test "writer pong with payload" {
 test "writer close with payload" {
     var output: [128]u8 = undefined;
     var writer_stm = io.fixedBufferStream(&output);
-    var w = try writer(writer_stm.writer(), testing.allocator);
+    var w = try writer(testing.allocator, writer_stm.writer());
     defer w.deinit();
     const payload = "hello";
     try w.close(1002, payload);
@@ -605,7 +605,7 @@ test "writer close with payload" {
 test "writer message" {
     var output: [128]u8 = undefined;
     var writer_stm = io.fixedBufferStream(&output);
-    var w = try writer(writer_stm.writer(), testing.allocator);
+    var w = try writer(testing.allocator, writer_stm.writer());
     defer w.deinit();
     const payload = "hello world";
     try w.text(payload);

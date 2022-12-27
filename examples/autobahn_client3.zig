@@ -32,7 +32,7 @@ fn runTestCase(allocator: Allocator, no: usize) !void {
     var reader = tcp_client.client.reader(0);
     var writer = tcp_client.client.writer(0);
     try ws.clientHandshake(allocator, reader, writer, "127.0.0.1:9001", path);
-    var stm = try ws.stream(reader, writer, allocator);
+    var stm = try ws.stream(allocator, reader, writer);
     defer stm.deinit();
     defer tcp_client.close();
 
