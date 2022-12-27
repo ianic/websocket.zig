@@ -185,8 +185,8 @@ fn clientHandshakeInit(allocator: Allocator, reader: anytype, writer: anytype) C
 
 // do client handshake using stream
 // error on unsuccessful handshake
-pub fn clientHandshake(allocator: Allocator, stream: anytype, host: []const u8, path: []const u8) !void {
-    var cs = clientHandshakeInit(allocator, stream.reader(), stream.writer());
+pub fn clientHandshake(allocator: Allocator, reader: anytype, writer: anytype, host: []const u8, path: []const u8) !void {
+    var cs = clientHandshakeInit(allocator, reader, writer);
     defer cs.deinit();
     try cs.writeRequest(host, path);
     try cs.assertValidResponse();

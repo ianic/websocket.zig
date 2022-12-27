@@ -29,10 +29,13 @@ fn runTestCase(allocator: Allocator, no: usize) !void {
     const path = try std.fmt.bufPrint(&path_buf, "/runCase?case={d}&agent=websocket.zig", .{no});
 
     var tcp_client = try TcpClient.init("127.0.0.1", 9001);
-    var reader = tcp_client.client.reader(0);
-    var writer = tcp_client.client.writer(0);
-    try ws.clientHandshake(allocator, reader, writer, "127.0.0.1:9001", path);
-    var stm = try ws.stream(allocator, reader, writer);
+    var stm = try ws.clientStream(
+        allocator,
+        tcp_client.client.reader(0),
+        tcp_client.client.writer(0),
+        "127.0.0.1:9001",
+        path,
+    );
     defer stm.deinit();
     defer tcp_client.close();
 
