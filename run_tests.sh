@@ -6,5 +6,5 @@ zig build -freference-trace -Drelease-fast
 url=ws://localhost:9001
 msgs=$(websocat "$url/getCaseCount" -E --jsonrpc)
 
-./zig-out/bin/autobahn_client3 "$msgs"
+./zig-out/bin/autobahn_client "$msgs"
 websocat "$url/updateReports?agent=websocket.zig" -E
