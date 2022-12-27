@@ -60,143 +60,6 @@ test "isValidSecAccept" {
     try testing.expect(!isValidSecAccept("3yMLSWFdF1MH1YDDPW/aYQ==", "9bQuZIN64KrRsqgxuR1CxYN94zQ"));
 }
 
-pub fn isWebSocketUpgrade(rsp: *HttpResponse, sec_key: []const u8) bool {
-    if (!mem.eql(u8, rsp.status, "101")) return false;
-
-    var iter = rsp.headerIter();
-    var upgrade_headers: usize = 0;
-    var sec_accept_valid = false;
-
-    while (iter.next()) |h| {
-        if (h.match("upgrade", "websocket")) upgrade_headers += 1;
-        if (h.match("connection", "upgrade")) upgrade_headers += 1;
-        if (h.keyMatch("sec-websocket-accept")) {
-            sec_accept_valid = isValidSecAccept(sec_key, h.value);
-        }
-    }
-
-    return upgrade_headers == 2 and sec_accept_valid;
-}
-
-const HttpResponse = struct {
-    buffer: []const u8,
-    headers: []const u8,
-
-    protocol: []const u8,
-    status: []const u8,
-    status_description: []const u8,
-
-    const Self = @This();
-
-    pub fn parse(buffer: []const u8) !Self {
-        var start_index: usize = 0;
-        const status_line = try readLine(buffer, &start_index);
-        const sp1 = mem.indexOfScalar(u8, status_line, ' ') orelse return error.InvalidHttpResponse;
-        const sp2 = mem.indexOfScalarPos(u8, status_line, sp1 + 1, ' ') orelse return error.InvalidHttpResponse;
-        return .{
-            .protocol = status_line[0..sp1],
-            .status = status_line[sp1 + 1 .. sp2],
-            .status_description = status_line[sp2 + 1 ..],
-            .buffer = buffer,
-            .headers = buffer[start_index..],
-        };
-    }
-
-    pub fn headerIter(self: *Self) HeaderIterator {
-        return HeaderIterator{ .buffer = self.headers };
-    }
-
-    pub fn hasHeader(self: *Self, key: []const u8, value: []const u8) bool {
-        var iter = self.headerIter();
-        while (iter.next()) |h|
-            if (h.match(key, value)) return true;
-        return false;
-    }
-
-    pub fn getHeader(self: *Self, key: []const u8) ?[]const u8 {
-        var iter = self.headerIter();
-        while (iter.next()) |h|
-            if (h.keyMatch(key)) return h.value;
-        return null;
-    }
-};
-
-fn readLine(buffer: []const u8, start_index: *usize) ![]const u8 {
-    const si = start_index.*;
-    const eol = mem.indexOfScalarPos(u8, buffer, si, '\n') orelse return error.InvalidHttpResponse;
-    var line = buffer[si..eol];
-    start_index.* += line.len + 1;
-    if (mem.endsWith(u8, line, "\r")) {
-        line = line[0 .. line.len - 1];
-    }
-    return line;
-}
-
-const HeaderIterator = struct {
-    buffer: []const u8,
-    index: usize = 0,
-
-    const Header = struct {
-        key: []const u8,
-        value: []const u8,
-
-        pub fn keyMatch(h: Header, key: []const u8) bool {
-            return ascii.eqlIgnoreCase(h.key, key);
-        }
-
-        pub fn match(h: Header, key: []const u8, value: []const u8) bool {
-            return (ascii.eqlIgnoreCase(h.key, key) and
-                ascii.eqlIgnoreCase(h.value, value));
-        }
-    };
-
-    const Self = @This();
-
-    pub fn next(self: *Self) ?Header {
-        const header_line = readLine(self.buffer, &self.index) catch return null;
-        if (header_line.len == 0)
-            return null;
-        const sep = mem.indexOfScalar(u8, header_line, ':') orelse return null;
-        const whitespace = " \t";
-        const key = mem.trim(u8, header_line[0..sep], whitespace);
-        const value = mem.trim(u8, header_line[sep + 1 ..], whitespace);
-
-        return Header{ .key = key, .value = value };
-    }
-};
-
-test "parse response" {
-    const rsp =
-        \\HTTP/1.1 101 Switching Protocols
-        \\Upgrade: websocket
-        \\Connection: Upgrade
-        \\Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=
-        \\
-    ;
-    try assertHttpResponse(rsp);
-
-    const rspWithCR = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n";
-    try assertHttpResponse(rspWithCR);
-}
-
-fn assertHttpResponse(rsp: []const u8) !void {
-    const sec_key = "dGhlIHNhbXBsZSBub25jZQ==";
-    const sec_accept = "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=";
-
-    var p = try HttpResponse.parse(rsp);
-    try testing.expectEqualStrings("HTTP/1.1", p.protocol);
-    try testing.expectEqualStrings("101", p.status);
-    try testing.expectEqualStrings("Switching Protocols", p.status_description);
-
-    try testing.expectEqualStrings(p.getHeader("Sec-WebSocket-Accept").?, sec_accept);
-    try testing.expectEqualStrings(p.getHeader("upgrade").?, "websocket");
-    try testing.expect(p.hasHeader("upgrade", "websocket"));
-    try testing.expectEqualStrings(p.getHeader("connection").?, "Upgrade");
-    try testing.expect(p.hasHeader("connection", "UPGRADE")); // case insensitive match
-
-    try testing.expect(isWebSocketUpgrade(&p, sec_key));
-}
-
 pub fn ClientHandshake(comptime ReaderType: type, comptime WriterType: type) type {
     return struct {
         reader: ReaderType,
@@ -316,18 +179,20 @@ pub fn ClientHandshake(comptime ReaderType: type, comptime WriterType: type) typ
     };
 }
 
-fn initClientHandshake(allocator: Allocator, reader: anytype, writer: anytype) ClientHandshake(@TypeOf(reader), @TypeOf(writer)) {
+fn clientHandshakeInit(allocator: Allocator, reader: anytype, writer: anytype) ClientHandshake(@TypeOf(reader), @TypeOf(writer)) {
     return ClientHandshake(@TypeOf(reader), @TypeOf(writer)).init(allocator, reader, writer);
 }
 
-pub fn clientHandshake(allocator: Allocator, reader: anytype, writer: anytype, host: []const u8, path: []const u8) !void {
-    var cs = initClientHandshake(allocator, reader, writer);
+// do client handshake using stream
+// error on unsuccessful handshake
+pub fn clientHandshake(allocator: Allocator, stream: anytype, host: []const u8, path: []const u8) !void {
+    var cs = clientHandshakeInit(allocator, stream.reader(), stream.writer());
     defer cs.deinit();
     try cs.writeRequest(host, path);
     try cs.assertValidResponse();
 }
 
-const testingStream = @import("fixed_buffers_stream.zig").testingStream;
+const testing_stream = @import("testing_stream.zig");
 
 test "parse response" {
     const http_server_response =
@@ -338,10 +203,9 @@ test "parse response" {
         \\
         \\
     ;
-    var stm = testingStream(http_server_response, 1024).init();
-    var cs = initClientHandshake(testing.allocator, stm.reader(), stm.writer());
+    var stm = testing_stream.init(http_server_response);
+    var cs = clientHandshakeInit(testing.allocator, stm.reader(), stm.writer());
     defer cs.deinit();
-
     var rsp = try cs.parseResponse();
     const sec_key = "3yMLSWFdF1MH1YDDPW/aYQ==";
     try testing.expect(rsp.isWebSocketUpgrade(sec_key));
@@ -363,8 +227,8 @@ test "valid ws handshake" {
         "Sec-WebSocket-Key: 3yMLSWFdF1MH1YDDPW/aYQ==\r\n" ++
         "Sec-WebSocket-Version: 13\r\n\r\n";
 
-    var stm = testingStream(input, 1024).init();
-    try clientHandshake(testing.allocator, stm.reader(), stm.writer(), "ws.example.com", "/ws");
+    var stm = testing_stream.init(input);
+    try clientHandshake(testing.allocator, &stm, "ws.example.com", "/ws");
     try testing.expectEqualSlices(u8, stm.written(), &expected_output.*);
 }
 

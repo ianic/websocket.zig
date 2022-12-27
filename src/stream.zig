@@ -468,6 +468,7 @@ const testing = std.testing;
 const expectEqual = testing.expectEqual;
 const expectEqualSlices = testing.expectEqualSlices;
 const expectError = testing.expectError;
+const testing_stream = @import("testing_stream.zig");
 
 test "reader read close frame" {
     var input = [_]u8{ 0x88, 0x02, 0x03, 0xe8 };
@@ -501,11 +502,16 @@ test "reader read masked close frame with payload" {
     try expectError(error.EndOfStream, rdr.frame());
 }
 
+const fixture_fragmented_message =
+    [_]u8{ 0x01, 0x1, 0xa } ++ // first text frame
+    [_]u8{ 0x89, 0x00 } ++ // ping in between
+    [_]u8{ 0x00, 0x3, 0xb, 0xc, 0xd } ++ // continuation frame
+    [_]u8{ 0x8a, 0x00 } ++ // pong
+    [_]u8{ 0x80, 0x2, 0xe, 0xf };
+
 test "read fragmented message" {
-    var output: [128]u8 = undefined;
-    var reader_stm = io.fixedBufferStream(&fixture_fragmented_message);
-    var writer_stm = io.fixedBufferStream(&output);
-    var stm = try stream(reader_stm.reader(), writer_stm.writer(), testing.allocator);
+    var inner_stm = testing_stream.init(&fixture_fragmented_message);
+    var stm = try stream(inner_stm.reader(), inner_stm.writer(), testing.allocator);
     defer stm.deinit();
 
     var msg = try stm.readMessage();
@@ -516,16 +522,9 @@ test "read fragmented message" {
     try testing.expectEqualSlices(u8, msg.payload, &[_]u8{ 0xa, 0xb, 0xc, 0xd, 0xe, 0xf });
 
     // expect pong in the output
-    try expectEqual(writer_stm.pos, 6); // pong header (2 bytes) + mask (4 bytes)
-    try testing.expectEqualSlices(u8, output[0..2], &[_]u8{ 0x8a, 0x80 });
+    try expectEqual(inner_stm.write_pos, 6); // pong header (2 bytes) + mask (4 bytes)
+    try testing.expectEqualSlices(u8, inner_stm.written()[0..2], &[_]u8{ 0x8a, 0x80 });
 }
-
-const fixture_fragmented_message =
-    [_]u8{ 0x01, 0x1, 0xa } ++ // first text frame
-    [_]u8{ 0x89, 0x00 } ++ // ping in between
-    [_]u8{ 0x00, 0x3, 0xb, 0xc, 0xd } ++ // continuation frame
-    [_]u8{ 0x8a, 0x00 } ++ // pong
-    [_]u8{ 0x80, 0x2, 0xe, 0xf };
 
 test "reader read frames" {
     var fbs = io.fixedBufferStream(&fixture_fragmented_message);
@@ -551,10 +550,8 @@ test "reader read frames" {
 }
 
 test "stream read frames" {
-    var output: [128]u8 = undefined;
-    var reader_stm = io.fixedBufferStream(&fixture_fragmented_message);
-    var writer_stm = io.fixedBufferStream(&output);
-    var stm = try stream(reader_stm.reader(), writer_stm.writer(), testing.allocator);
+    var inner_stm = testing_stream.init(&fixture_fragmented_message);
+    var stm = try stream(inner_stm.reader(), inner_stm.writer(), testing.allocator);
     defer stm.deinit();
 
     const frames = [_]struct { Frame.Opcode, u1, usize }{
