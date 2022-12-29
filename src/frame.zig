@@ -37,6 +37,7 @@ pub const Frame = struct {
     pub const empty_payload = &[_]u8{};
 
     fin: u1,
+    rsv1: u1 = 0,
     mask: u1,
     opcode: Opcode,
     payload: []const u8,
@@ -85,6 +86,10 @@ pub const Frame = struct {
 
     pub fn isFin(self: *Self) bool {
         return self.fin == 1;
+    }
+
+    pub fn isCompressed(self: *Self) bool {
+        return self.rsv1 == 1;
     }
 
     pub fn isControl(self: *Self) bool {

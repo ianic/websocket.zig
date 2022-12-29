@@ -25,6 +25,10 @@ pub const Message = struct {
     }
 };
 
+pub const Options = struct {
+    per_message_deflate: bool = false,
+};
+
 pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
     return struct {
         reader: Reader(ReaderType),
@@ -77,11 +81,16 @@ pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
         fn readMessage(self: *Self) !Message {
             var frame = try self.readDataFrame();
             const encoding: Message.Encoding = if (frame.opcode == .binary) .binary else .text;
-            if (frame.isFin()) return self.initMessage(encoding, frame.payload); // if single frame return frame payload as message payload
+            const compressed = frame.isCompressed();
+            if (frame.isFin() and !compressed)
+                return self.initMessage(encoding, frame.payload); // if single frame return frame payload as message payload
 
             // collect frames payloads
             var payload = try std.ArrayList(u8).initCapacity(self.allocator, frame.payload.len);
             try payload.appendSlice(frame.payload);
+            if (frame.isFin() and compressed) {
+                return self.initCompressedMessage(encoding, &payload);
+            }
             frame.deinit();
             defer payload.deinit();
 
@@ -89,7 +98,10 @@ pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
                 var next = try self.readDataFrame();
                 defer next.deinit();
                 try payload.appendSlice(next.payload);
-                if (next.isFin()) return self.initMessage(encoding, try payload.toOwnedSlice());
+                if (next.isFin()) return if (!compressed)
+                    self.initMessage(encoding, try payload.toOwnedSlice())
+                else
+                    self.initCompressedMessage(encoding, &payload);
             }
         }
 
@@ -104,6 +116,21 @@ pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
             return Message{ .encoding = encoding, .payload = payload, .allocator = self.allocator };
         }
 
+        fn initCompressedMessage(self: *Self, encoding: Message.Encoding, compressed: *std.ArrayList(u8)) !Message {
+            try compressed.appendSlice(&[_]u8{ 0x0, 0x0, 0xff, 0xff });
+            // errdefer {
+            //     showBuf(compressed.items);
+            //     unreachable;
+            // }
+            var decompressor_stm = io.fixedBufferStream(compressed.items);
+            var decomp = try std.compress.deflate.decompressor(self.allocator, decompressor_stm.reader(), null);
+            defer decomp.deinit();
+            var decompressed = try decomp.reader().readAllAlloc(self.allocator, math.maxInt(usize));
+            if (encoding == .text)
+                if (!utf8ValidateSlice(decompressed)) return error.InvalidUtf8Payload;
+            return Message{ .encoding = encoding, .payload = decompressed, .allocator = self.allocator };
+        }
+
         pub fn deinit(self: *Self) void {
             self.writer.deinit();
         }
@@ -115,13 +142,15 @@ pub fn Reader(comptime ReaderType: type) type {
     return struct {
         bit_reader: BitReader,
         allocator: Allocator,
+        deflate_supported: bool,
 
         const Self = @This();
 
-        pub fn init(allocator: Allocator, inner_reader: ReaderType) Self {
+        pub fn init(allocator: Allocator, inner_reader: ReaderType, deflate_supported: bool) Self {
             return .{
                 .allocator = allocator,
                 .bit_reader = io.bitReader(.Big, inner_reader),
+                .deflate_supported = deflate_supported,
             };
         }
 
@@ -163,8 +192,8 @@ pub fn Reader(comptime ReaderType: type) type {
             const rsv1 = try self.readBit();
             const rsv2 = try self.readBit();
             const rsv3 = try self.readBit();
-            // TODO rsv1 can be set is compression is supported
-            if (rsv1 != 0 or rsv2 != 0 or rsv3 != 0) return error.WrongRsv;
+            if (rsv1 == 1 and !self.deflate_supported) return error.DeflateNotSupported;
+            if (rsv2 == 1 or rsv3 == 1) return error.ReservedRsv;
 
             const opcode = try self.readOpcode();
             const mask = try self.readBit();
@@ -173,6 +202,7 @@ pub fn Reader(comptime ReaderType: type) type {
 
             var frm = Frame{
                 .fin = fin,
+                .rsv1 = rsv1,
                 .mask = mask,
                 .opcode = opcode,
                 .payload = payload,
@@ -259,8 +289,8 @@ pub fn Writer(comptime WriterType: type) type {
     };
 }
 
-fn reader(allocator: Allocator, inner_reader: anytype) Reader(@TypeOf(inner_reader)) {
-    return Reader(@TypeOf(inner_reader)).init(allocator, inner_reader);
+fn reader(allocator: Allocator, inner_reader: anytype, deflate_supported: bool) Reader(@TypeOf(inner_reader)) {
+    return Reader(@TypeOf(inner_reader)).init(allocator, inner_reader, deflate_supported);
 }
 
 fn writer(allocator: Allocator, inner_writer: anytype) !Writer(@TypeOf(inner_writer)) {
@@ -268,10 +298,15 @@ fn writer(allocator: Allocator, inner_writer: anytype) !Writer(@TypeOf(inner_wri
 }
 
 // create websocket client stream
-pub fn client(allocator: Allocator, inner_reader: anytype, inner_writer: anytype) !Stream(@TypeOf(inner_reader), @TypeOf(inner_writer)) {
+pub fn client(
+    allocator: Allocator,
+    inner_reader: anytype,
+    inner_writer: anytype,
+    options: Options,
+) !Stream(@TypeOf(inner_reader), @TypeOf(inner_writer)) {
     return .{
         .allocator = allocator,
-        .reader = reader(allocator, inner_reader),
+        .reader = reader(allocator, inner_reader, options.per_message_deflate),
         .writer = try writer(allocator, inner_writer),
     };
 }
@@ -285,7 +320,7 @@ const testing_stream = @import("testing_stream.zig");
 test "reader read close frame" {
     var input = [_]u8{ 0x88, 0x02, 0x03, 0xe8 };
     var inner_stm = io.fixedBufferStream(&input);
-    var rdr = reader(testing.allocator, inner_stm.reader());
+    var rdr = reader(testing.allocator, inner_stm.reader(), false);
     var frame = try rdr.frame();
     defer frame.deinit();
 
@@ -300,7 +335,7 @@ test "reader read close frame" {
 test "reader read masked close frame with payload" {
     var input = [_]u8{ 0x88, 0x87, 0xa, 0xb, 0xc, 0xd, 0x09, 0xe2, 0x0d, 0x0f, 0x09, 0x0f, 0x09 };
     var inner_stm = io.fixedBufferStream(&input);
-    var rdr = reader(testing.allocator, inner_stm.reader());
+    var rdr = reader(testing.allocator, inner_stm.reader(), false);
     var frame = try rdr.frame();
     defer frame.deinit();
 
@@ -323,7 +358,7 @@ const fixture_fragmented_message =
 
 test "read fragmented message" {
     var inner_stm = testing_stream.init(&fixture_fragmented_message);
-    var stm = try client(testing.allocator, inner_stm.reader(), inner_stm.writer());
+    var stm = try client(testing.allocator, inner_stm.reader(), inner_stm.writer(), .{});
     defer stm.deinit();
 
     var msg = try stm.readMessage();
@@ -340,7 +375,7 @@ test "read fragmented message" {
 
 test "reader read frames" {
     var fbs = io.fixedBufferStream(&fixture_fragmented_message);
-    var rdr = reader(testing.allocator, fbs.reader());
+    var rdr = reader(testing.allocator, fbs.reader(), false);
 
     const frames = [_]struct { Frame.Opcode, u1, usize }{
         // opcode, fin, payload_len
@@ -363,7 +398,7 @@ test "reader read frames" {
 
 test "stream read frames" {
     var inner_stm = testing_stream.init(&fixture_fragmented_message);
-    var stm = try client(testing.allocator, inner_stm.reader(), inner_stm.writer());
+    var stm = try client(testing.allocator, inner_stm.reader(), inner_stm.writer(), .{});
     defer stm.deinit();
 
     const frames = [_]struct { Frame.Opcode, u1, usize }{
@@ -435,3 +470,29 @@ fn showBuf(buf: []const u8) void {
         std.debug.print("0x{x:0>2}, ", .{b});
     std.debug.print("\n", .{});
 }
+
+test "deflate compress/decompress" {
+    const allocator = testing.allocator;
+    const input = "Hello";
+
+    var compressor_stm = std.ArrayList(u8).init(allocator);
+    defer compressor_stm.deinit();
+    var comp = try std.compress.deflate.compressor(allocator, compressor_stm.writer(), .{});
+    defer comp.deinit();
+    _ = try comp.write(input);
+    try comp.close();
+    var compressed = compressor_stm.items;
+    //showBuf(compressed);
+
+    var decompressor_stm = io.fixedBufferStream(compressed);
+    var decomp = try std.compress.deflate.decompressor(allocator, decompressor_stm.reader(), null);
+    defer decomp.deinit();
+
+    var decompressed = try decomp.reader().readAllAlloc(allocator, math.maxInt(usize));
+    defer allocator.free(decompressed);
+    try testing.expectEqual(input.len, decompressed.len);
+    try testing.expectEqualSlices(u8, input, decompressed);
+}
+
+const deflate = std.compress.deflate;
+const math = std.math;

@@ -8,6 +8,8 @@ const fmt = std.fmt;
 const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
 
+const Options = @import("stream.zig").Options;
+
 const WS_MAGIC_KEY = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 var base64Encoder = std.base64.standard.Encoder;
 var rnd = std.rand.DefaultPrng.init(0);
@@ -66,6 +68,7 @@ pub fn Client(comptime ReaderType: type, comptime WriterType: type) type {
         writer: WriterType,
         arena: std.heap.ArenaAllocator,
         sec_key: [24]u8,
+        options: Options = .{},
 
         const Self = @This();
 
@@ -84,13 +87,31 @@ pub fn Client(comptime ReaderType: type, comptime WriterType: type) type {
 
         pub fn writeRequest(self: *Self, host: []const u8, path: []const u8) !void {
             var buf: [1024]u8 = undefined;
-            const format = "GET ws://{s}{s} HTTP/1.1\r\nHost: {s}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {s}\r\nSec-WebSocket-Version: 13\r\n\r\n";
+            const crlf = "\r\n";
+            const format = "GET ws://{s}{s} HTTP/1.1\r\nHost: {s}" ++ crlf ++
+                "Upgrade: websocket" ++ crlf ++
+                "Connection: Upgrade" ++ crlf ++
+                "Sec-WebSocket-Key: {s}" ++ crlf ++
+                "Sec-WebSocket-Version: 13" ++ crlf ++
+                "Sec-WebSocket-Extensions: permessage-deflate;client_no_context_takeover;server_no_context_takeover" ++ crlf ++
+                //"Sec-WebSocket-Extensions: permessage-deflate" ++ crlf ++
+                crlf;
             try self.writer.writeAll(try fmt.bufPrint(&buf, format, .{ host, path, host, self.sec_key }));
         }
 
         pub fn assertValidResponse(self: *Self) !void {
             var rsp = try self.parseResponse();
             try rsp.assertWebSocketUpgrade(&self.sec_key);
+            self.readOptions(&rsp);
+        }
+
+        fn readOptions(self: *Self, rsp: *Response) void {
+            for (rsp.headers) |h| {
+                if (h.keyMatch("sec-websocket-extensions")) {
+                    if (ascii.indexOfIgnoreCase(h.value, "permessage-deflate")) |_|
+                        self.options.per_message_deflate = true;
+                }
+            }
         }
 
         const max_response_line_len = 1024;
@@ -185,11 +206,12 @@ fn clientInit(allocator: Allocator, reader: anytype, writer: anytype) Client(@Ty
 
 // do client handshake using stream
 // error on unsuccessful handshake
-pub fn client(allocator: Allocator, reader: anytype, writer: anytype, host: []const u8, path: []const u8) !void {
+pub fn client(allocator: Allocator, reader: anytype, writer: anytype, host: []const u8, path: []const u8) !Options {
     var cs = clientInit(allocator, reader, writer);
     defer cs.deinit();
     try cs.writeRequest(host, path);
     try cs.assertValidResponse();
+    return cs.options;
 }
 
 const testing_stream = @import("testing_stream.zig");
@@ -200,6 +222,7 @@ test "parse response" {
         \\Upgrade: websocket
         \\Connection: Upgrade
         \\Sec-WebSocket-Accept: 9bQuZIN64KrRsqgxuR1CxYN94zQ=
+        \\Sec-WebSocket-Extensions: permessage-deflate
         \\
         \\
     ;
@@ -211,25 +234,29 @@ test "parse response" {
     try testing.expect(rsp.isWebSocketUpgrade(sec_key));
     try rsp.assertWebSocketUpgrade(sec_key);
     try rsp.assertWebSocketUpgrade(&cs.sec_key);
+
+    cs.readOptions(&rsp);
+    try testing.expect(cs.options.per_message_deflate);
 }
 
 test "valid ws handshake" {
-    const input =
-        "HTTP/1.1 101 Switching Protocols\r\n" ++
-        "Upgrade: websocket\r\n" ++
-        "Connection: Upgrade\r\n" ++
-        "Sec-WebSocket-Accept: 9bQuZIN64KrRsqgxuR1CxYN94zQ=\r\n\r\n";
-    const expected_output =
+    const http_request =
         "GET ws://ws.example.com/ws HTTP/1.1\r\n" ++
         "Host: ws.example.com\r\n" ++
         "Upgrade: websocket\r\n" ++
         "Connection: Upgrade\r\n" ++
         "Sec-WebSocket-Key: 3yMLSWFdF1MH1YDDPW/aYQ==\r\n" ++
-        "Sec-WebSocket-Version: 13\r\n\r\n";
+        "Sec-WebSocket-Version: 13\r\n" ++
+        "Sec-WebSocket-Extensions: permessage-deflate\r\n\r\n";
+    const http_response =
+        "HTTP/1.1 101 Switching Protocols\r\n" ++
+        "Upgrade: websocket\r\n" ++
+        "Connection: Upgrade\r\n" ++
+        "Sec-WebSocket-Accept: 9bQuZIN64KrRsqgxuR1CxYN94zQ=\r\n\r\n";
 
-    var stm = testing_stream.init(input);
+    var stm = testing_stream.init(http_response);
     try client(testing.allocator, stm.reader(), stm.writer(), "ws.example.com", "/ws");
-    try testing.expectEqualSlices(u8, stm.written(), &expected_output.*);
+    try testing.expectEqualSlices(u8, stm.written(), &http_request.*);
 }
 
 // debug helper
