@@ -247,7 +247,7 @@ test "valid ws handshake" {
         "Connection: Upgrade\r\n" ++
         "Sec-WebSocket-Key: 3yMLSWFdF1MH1YDDPW/aYQ==\r\n" ++
         "Sec-WebSocket-Version: 13\r\n" ++
-        "Sec-WebSocket-Extensions: permessage-deflate\r\n\r\n";
+        "Sec-WebSocket-Extensions: permessage-deflate;client_no_context_takeover;server_no_context_takeover\r\n\r\n";
     const http_response =
         "HTTP/1.1 101 Switching Protocols\r\n" ++
         "Upgrade: websocket\r\n" ++
@@ -255,7 +255,7 @@ test "valid ws handshake" {
         "Sec-WebSocket-Accept: 9bQuZIN64KrRsqgxuR1CxYN94zQ=\r\n\r\n";
 
     var stm = testing_stream.init(http_response);
-    try client(testing.allocator, stm.reader(), stm.writer(), "ws.example.com", "/ws");
+    _ = try client(testing.allocator, stm.reader(), stm.writer(), "ws.example.com", "/ws");
     try testing.expectEqualSlices(u8, stm.written(), &http_request.*);
 }
 
