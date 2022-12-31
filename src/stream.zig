@@ -1,6 +1,7 @@
 const std = @import("std");
 const io = std.io;
 const mem = std.mem;
+const zlib = @import("zlib");
 
 const assert = std.debug.assert;
 const Allocator = mem.Allocator;
@@ -122,10 +123,11 @@ pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
             //     showBuf(compressed.items);
             //     unreachable;
             // }
-            var decompressor_stm = io.fixedBufferStream(compressed.items);
-            var decomp = try std.compress.deflate.decompressor(self.allocator, decompressor_stm.reader(), null);
-            defer decomp.deinit();
-            var decompressed = try decomp.reader().readAllAlloc(self.allocator, math.maxInt(usize));
+
+            var dcmp = try zlib.BufferDecompressor.init(self.allocator, .{ .header = .none });
+            defer dcmp.deinit();
+            const decompressed = try dcmp.decompressAllAlloc(compressed.items);
+
             if (encoding == .text)
                 if (!utf8ValidateSlice(decompressed)) return error.InvalidUtf8Payload;
             return Message{ .encoding = encoding, .payload = decompressed, .allocator = self.allocator };
