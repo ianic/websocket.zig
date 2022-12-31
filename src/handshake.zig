@@ -62,6 +62,8 @@ test "isValidSecAccept" {
     try testing.expect(!isValidSecAccept("3yMLSWFdF1MH1YDDPW/aYQ==", "9bQuZIN64KrRsqgxuR1CxYN94zQ"));
 }
 
+const crlf = "\r\n";
+
 pub fn Client(comptime ReaderType: type, comptime WriterType: type) type {
     return struct {
         reader: ReaderType,
@@ -87,14 +89,13 @@ pub fn Client(comptime ReaderType: type, comptime WriterType: type) type {
 
         pub fn writeRequest(self: *Self, host: []const u8, path: []const u8) !void {
             var buf: [1024]u8 = undefined;
-            const crlf = "\r\n";
             const format = "GET ws://{s}{s} HTTP/1.1\r\nHost: {s}" ++ crlf ++
                 "Upgrade: websocket" ++ crlf ++
                 "Connection: Upgrade" ++ crlf ++
                 "Sec-WebSocket-Key: {s}" ++ crlf ++
                 "Sec-WebSocket-Version: 13" ++ crlf ++
                 //"Sec-WebSocket-Extensions: permessage-deflate;client_no_context_takeover;server_no_context_takeover" ++ crlf ++
-                "Sec-WebSocket-Extensions: permessage-deflate" ++ crlf ++
+                "Sec-WebSocket-Extensions: permessage-deflate;client_max_window_bits" ++ crlf ++
                 crlf;
             try self.writer.writeAll(try fmt.bufPrint(&buf, format, .{ host, path, host, self.sec_key }));
         }
@@ -111,6 +112,8 @@ pub fn Client(comptime ReaderType: type, comptime WriterType: type) type {
                     self.options.per_message_deflate = h.valueIncludes("permessage-deflate");
                     self.options.server_no_context_takeover = h.valueIncludes("server_no_context_takeover");
                     self.options.client_no_context_takeover = h.valueIncludes("client_no_context_takeover");
+                    if (h.paramValue("server_max_window_bits")) |v|
+                        self.options.server_max_window_bits = std.fmt.parseInt(u4, v, 10) catch 15;
                 }
             }
         }
@@ -127,6 +130,18 @@ pub fn Client(comptime ReaderType: type, comptime WriterType: type) type {
 
             pub fn valueIncludes(h: Header, needle: []const u8) bool {
                 return ascii.indexOfIgnoreCase(h.value, needle) != null;
+            }
+
+            pub fn paramValue(h: Header, param: []const u8) ?[]const u8 {
+                var it = std.mem.tokenize(u8, h.value, ";= ");
+                while (it.next()) |k| {
+                    if (ascii.eqlIgnoreCase(k, param)) {
+                        if (it.next()) |v| {
+                            return v;
+                        }
+                    }
+                }
+                return null;
             }
 
             pub fn match(h: Header, key: []const u8, value: []const u8) bool {
@@ -254,7 +269,7 @@ test "valid ws handshake" {
         "Connection: Upgrade\r\n" ++
         "Sec-WebSocket-Key: 3yMLSWFdF1MH1YDDPW/aYQ==\r\n" ++
         "Sec-WebSocket-Version: 13\r\n" ++
-        "Sec-WebSocket-Extensions: permessage-deflate\r\n\r\n";
+        "Sec-WebSocket-Extensions: permessage-deflate;client_max_window_bits\r\n\r\n";
     const http_response =
         "HTTP/1.1 101 Switching Protocols\r\n" ++
         "Upgrade: websocket\r\n" ++
@@ -264,6 +279,39 @@ test "valid ws handshake" {
     var stm = testing_stream.init(http_response);
     _ = try client(testing.allocator, stm.reader(), stm.writer(), "ws.example.com", "/ws");
     try testing.expectEqualSlices(u8, stm.written(), &http_request.*);
+}
+
+test "read client_max_windwo_bits" {
+    const http_response = "HTTP/1.1 101 Switching Protocols" ++ crlf ++
+        "Server: AutobahnTestSuite/0.8.2-0.10.9" ++ crlf ++
+        "X-Powered-By: AutobahnPython/0.10.9" ++ crlf ++
+        "Upgrade: WebSocket" ++ crlf ++
+        "Connection: Upgrade" ++ crlf ++
+        "Sec-WebSocket-Accept: ZBAEEEGewknsjRb8mwp3/qVSKxw=" ++ crlf ++
+        "Sec-WebSocket-Extensions: permessage-deflate; server_max_window_bits=12" ++ crlf ++
+        crlf;
+
+    var output: [1024]u8 = undefined;
+    var in_stm = io.fixedBufferStream(http_response);
+    var out_stm = io.fixedBufferStream(&output);
+
+    var cs = clientInit(testing.allocator, in_stm.reader(), out_stm.writer());
+    defer cs.deinit();
+    var rsp = try cs.parseResponse();
+    cs.readOptions(&rsp);
+    try testing.expect(cs.options.per_message_deflate);
+
+    var cmwb: ?[]const u8 = null;
+    for (rsp.headers) |h| {
+        if (h.keyMatch("sec-websocket-extensions")) {
+            if (h.paramValue("server_max_window_bits")) |v| {
+                cmwb = v;
+            }
+        }
+    }
+    try testing.expect(cmwb != null);
+    try testing.expectEqualSlices(u8, cmwb.?, "12");
+    try testing.expectEqual(cs.options.server_max_window_bits, 12);
 }
 
 // debug helper

@@ -237,7 +237,7 @@ pub const DecompressorOptions = struct {
     const Self = @This();
 
     pub fn windowSize(self: Self) i5 {
-        var ws = if (self.window_size < 8) 8 else self.window_size;
+        var ws = if (self.window_size < 8) 15 else self.window_size;
         return if (self.header == .none) -@as(i5, ws) else ws;
     }
 };

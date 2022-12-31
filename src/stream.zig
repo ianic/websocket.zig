@@ -21,8 +21,23 @@ pub const Message = struct {
 
     const Self = @This();
 
+    pub fn init(allocator: Allocator, encoding: Encoding, payload: []const u8) !Self {
+        var self = Self{
+            .allocator = allocator,
+            .encoding = encoding,
+            .payload = payload,
+        };
+        try self.validate();
+        return self;
+    }
+
     pub fn deinit(self: *Self) void {
         if (self.allocator) |a| a.free(self.payload);
+    }
+
+    fn validate(self: *Self) !void {
+        if (self.encoding == .text)
+            if (!utf8ValidateSlice(self.payload)) return error.InvalidUtf8Payload;
     }
 };
 
@@ -34,6 +49,7 @@ pub const Options = struct {
 
     // false indicates that the server can decompress messages built by the client using context takeover
     client_no_context_takeover: bool = false,
+    server_max_window_bits: u4 = 15,
 };
 
 pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
@@ -119,10 +135,7 @@ pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
         }
 
         fn initMessage(self: *Self, encoding: Message.Encoding, payload: []const u8) !Message {
-            if (encoding == .text)
-                if (!utf8ValidateSlice(payload)) return error.InvalidUtf8Payload;
-
-            return Message{ .encoding = encoding, .payload = payload, .allocator = self.allocator };
+            return Message.init(self.allocator, encoding, payload);
         }
 
         fn initCompressedMessage(self: *Self, encoding: Message.Encoding, compressed: *std.ArrayList(u8)) !Message {
@@ -135,10 +148,7 @@ pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
 
                 const decompressed = try dcmp.decompressAllAlloc(compressed.items);
                 if (self.options.server_no_context_takeover) try dcmp.reset();
-
-                if (encoding == .text)
-                    if (!utf8ValidateSlice(decompressed)) return error.InvalidUtf8Payload;
-                return Message{ .encoding = encoding, .payload = decompressed, .allocator = self.allocator };
+                return Message.init(self.allocator, encoding, decompressed);
             }
             return error.CompressionNotSupported;
         }
@@ -322,7 +332,7 @@ pub fn client(
         .writer = try writer(allocator, inner_writer),
         .options = options,
         .decompressor = if (options.per_message_deflate)
-            try zlib.BufferDecompressor.init(allocator, .{ .header = .none })
+            try zlib.BufferDecompressor.init(allocator, .{ .header = .none, .window_size = options.server_max_window_bits })
         else
             null,
     };
