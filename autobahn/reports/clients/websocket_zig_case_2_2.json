@@ -1,0 +1,175 @@
+{
+   "agent": "websocket.zig",
+   "behavior": "OK",
+   "behaviorClose": "OK",
+   "case": 18,
+   "closedByMe": true,
+   "createStats": true,
+   "createWirelog": true,
+   "description": "Send ping with small text payload.",
+   "droppedByMe": true,
+   "duration": 4,
+   "expectation": "Pong with payload echo'ed is sent in reply to Ping. Clean close with normal code.",
+   "expected": {
+      "OK": [
+         [
+            "pong",
+            "Hello, world!"
+         ]
+      ]
+   },
+   "expectedClose": {
+      "closeCode": [
+         1000
+      ],
+      "closedByMe": true,
+      "requireClean": true
+   },
+   "failedByMe": false,
+   "httpRequest": "GET ws://127.0.0.1:9001/runCase?case=18&agent=websocket.zig HTTP/1.1\r\nHost: 127.0.0.1:9001\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: E4FkZvd2nd9B3sCut/grNA==\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Extensions: permessage-deflate;client_max_window_bits\r\n\r\n",
+   "httpResponse": "HTTP/1.1 101 Switching Protocols\r\nServer: AutobahnTestSuite/0.8.2-0.10.9\r\nX-Powered-By: AutobahnPython/0.10.9\r\nUpgrade: WebSocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: +GpW5h26z9TincmWi/Xvf+UPoSM=\r\n\r\n",
+   "id": "2.2",
+   "isServer": true,
+   "localCloseCode": 1000,
+   "localCloseReason": null,
+   "received": [
+      [
+         "pong",
+         "Hello, world!"
+      ]
+   ],
+   "remoteCloseCode": 1000,
+   "remoteCloseReason": null,
+   "reportCompressionRatio": false,
+   "reportTime": false,
+   "result": "Actual events match at least one expected.",
+   "resultClose": "Connection was properly closed",
+   "rxFrameStats": {
+      "8": 1,
+      "10": 1
+   },
+   "rxOctetStats": {
+      "8": 1,
+      "19": 1,
+      "276": 1
+   },
+   "started": "2022-12-31T17:01:56.891Z",
+   "trafficStats": null,
+   "txFrameStats": {
+      "8": 1,
+      "9": 1
+   },
+   "txOctetStats": {
+      "4": 1,
+      "15": 1,
+      "206": 1
+   },
+   "wasClean": true,
+   "wasCloseHandshakeTimeout": false,
+   "wasNotCleanReason": null,
+   "wasOpenHandshakeTimeout": false,
+   "wasServerConnectionDropTimeout": false,
+   "wirelog": [
+      [
+         "RO",
+         [
+            276,
+            "4745542077733a2f2f3132372e302e302e313a393030312f72756e436173653f636173653d3138266167656e743d776562736f636b65742e7a69672048545450 ..."
+         ]
+      ],
+      [
+         "TO",
+         [
+            206,
+            "485454502f312e312031303120537769746368696e672050726f746f636f6c730d0a5365727665723a204175746f6261686e5465737453756974652f302e382e ..."
+         ],
+         false
+      ],
+      [
+         "TF",
+         [
+            13,
+            "Hello, world!"
+         ],
+         9,
+         true,
+         0,
+         null,
+         null,
+         null,
+         false
+      ],
+      [
+         "TO",
+         [
+            15,
+            "890d48656c6c6f2c20776f726c6421"
+         ],
+         false
+      ],
+      [
+         "TI",
+         1
+      ],
+      [
+         "RO",
+         [
+            19,
+            "8a8d3dce735e75ab1f3252e2532952bc1f3a1c"
+         ]
+      ],
+      [
+         "RF",
+         [
+            13,
+            "Hello, world!"
+         ],
+         10,
+         true,
+         0,
+         true,
+         "3dce735e"
+      ],
+      [
+         "TF",
+         [
+            2,
+            "0x03e8"
+         ],
+         8,
+         true,
+         0,
+         null,
+         null,
+         null,
+         false
+      ],
+      [
+         "TO",
+         [
+            4,
+            "880203e8"
+         ],
+         false
+      ],
+      [
+         "RO",
+         [
+            8,
+            "888296c16b309529"
+         ]
+      ],
+      [
+         "RF",
+         [
+            2,
+            "0x03e8"
+         ],
+         8,
+         true,
+         0,
+         true,
+         "96c16b30"
+      ]
+   ]
+}
