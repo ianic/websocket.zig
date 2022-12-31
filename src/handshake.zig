@@ -108,8 +108,9 @@ pub fn Client(comptime ReaderType: type, comptime WriterType: type) type {
         fn readOptions(self: *Self, rsp: *Response) void {
             for (rsp.headers) |h| {
                 if (h.keyMatch("sec-websocket-extensions")) {
-                    if (ascii.indexOfIgnoreCase(h.value, "permessage-deflate")) |_|
-                        self.options.per_message_deflate = true;
+                    self.options.per_message_deflate = h.valueIncludes("permessage-deflate");
+                    self.options.server_no_context_takeover = h.valueIncludes("server_no_context_takeover");
+                    self.options.client_no_context_takeover = h.valueIncludes("client_no_context_takeover");
                 }
             }
         }
@@ -122,6 +123,10 @@ pub fn Client(comptime ReaderType: type, comptime WriterType: type) type {
 
             pub fn keyMatch(h: Header, key: []const u8) bool {
                 return ascii.eqlIgnoreCase(h.key, key);
+            }
+
+            pub fn valueIncludes(h: Header, needle: []const u8) bool {
+                return ascii.indexOfIgnoreCase(h.value, needle) != null;
             }
 
             pub fn match(h: Header, key: []const u8, value: []const u8) bool {
@@ -222,7 +227,7 @@ test "parse response" {
         \\Upgrade: websocket
         \\Connection: Upgrade
         \\Sec-WebSocket-Accept: 9bQuZIN64KrRsqgxuR1CxYN94zQ=
-        \\Sec-WebSocket-Extensions: permessage-deflate
+        \\Sec-WebSocket-Extensions: permessage-deflate;client_no_context_takeover;server_no_context_takeover
         \\
         \\
     ;
@@ -237,6 +242,8 @@ test "parse response" {
 
     cs.readOptions(&rsp);
     try testing.expect(cs.options.per_message_deflate);
+    try testing.expect(cs.options.client_no_context_takeover);
+    try testing.expect(cs.options.server_no_context_takeover);
 }
 
 test "valid ws handshake" {

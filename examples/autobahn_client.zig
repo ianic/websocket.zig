@@ -44,7 +44,7 @@ fn runTestCase(allocator: Allocator, no: usize) !void {
         try stm.sendMessage(msg);
     }
     if (stm.err) |err| {
-        std.debug.print("e", .{});
+        //std.debug.print("e", .{});
         std.log.err("case: {d} {}", .{ no, err });
     } else {
         std.debug.print(".", .{});

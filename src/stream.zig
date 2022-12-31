@@ -28,6 +28,12 @@ pub const Message = struct {
 
 pub const Options = struct {
     per_message_deflate: bool = false,
+
+    // false indicates that the client can decompress a message that the server built using context takeover
+    server_no_context_takeover: bool = false,
+
+    // false indicates that the server can decompress messages built by the client using context takeover
+    client_no_context_takeover: bool = false,
 };
 
 pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
@@ -40,6 +46,7 @@ pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
 
         last_frame_fragment: Frame.Fragment = .unfragmented,
         decompressor: ?zlib.BufferDecompressor = null,
+        options: Options = .{},
 
         const Self = @This();
 
@@ -119,14 +126,16 @@ pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
         }
 
         fn initCompressedMessage(self: *Self, encoding: Message.Encoding, compressed: *std.ArrayList(u8)) !Message {
-            // errdefer {
-            //     showBuf(compressed.items);
-            //     unreachable;
-            // }
+            defer {
+                //showBuf(compressed.items);
+            }
+
             if (self.decompressor) |*dcmp| {
                 try compressed.appendSlice(&[_]u8{ 0x0, 0x0, 0xff, 0xff });
 
                 const decompressed = try dcmp.decompressAllAlloc(compressed.items);
+                if (self.options.server_no_context_takeover) try dcmp.reset();
+
                 if (encoding == .text)
                     if (!utf8ValidateSlice(decompressed)) return error.InvalidUtf8Payload;
                 return Message{ .encoding = encoding, .payload = decompressed, .allocator = self.allocator };
@@ -311,6 +320,7 @@ pub fn client(
         .allocator = allocator,
         .reader = reader(allocator, inner_reader, options.per_message_deflate),
         .writer = try writer(allocator, inner_writer),
+        .options = options,
         .decompressor = if (options.per_message_deflate)
             try zlib.BufferDecompressor.init(allocator, .{ .header = .none })
         else
