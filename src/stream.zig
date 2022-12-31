@@ -39,6 +39,7 @@ pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
         err: ?anyerror = null,
 
         last_frame_fragment: Frame.Fragment = .unfragmented,
+        decompressor: ?zlib.BufferDecompressor = null,
 
         const Self = @This();
 
@@ -118,19 +119,19 @@ pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
         }
 
         fn initCompressedMessage(self: *Self, encoding: Message.Encoding, compressed: *std.ArrayList(u8)) !Message {
-            try compressed.appendSlice(&[_]u8{ 0x0, 0x0, 0xff, 0xff });
             // errdefer {
             //     showBuf(compressed.items);
             //     unreachable;
             // }
+            if (self.decompressor) |*dcmp| {
+                try compressed.appendSlice(&[_]u8{ 0x0, 0x0, 0xff, 0xff });
 
-            var dcmp = try zlib.BufferDecompressor.init(self.allocator, .{ .header = .none });
-            defer dcmp.deinit();
-            const decompressed = try dcmp.decompressAllAlloc(compressed.items);
-
-            if (encoding == .text)
-                if (!utf8ValidateSlice(decompressed)) return error.InvalidUtf8Payload;
-            return Message{ .encoding = encoding, .payload = decompressed, .allocator = self.allocator };
+                const decompressed = try dcmp.decompressAllAlloc(compressed.items);
+                if (encoding == .text)
+                    if (!utf8ValidateSlice(decompressed)) return error.InvalidUtf8Payload;
+                return Message{ .encoding = encoding, .payload = decompressed, .allocator = self.allocator };
+            }
+            return error.CompressionNotSupported;
         }
 
         pub fn deinit(self: *Self) void {
@@ -310,6 +311,10 @@ pub fn client(
         .allocator = allocator,
         .reader = reader(allocator, inner_reader, options.per_message_deflate),
         .writer = try writer(allocator, inner_writer),
+        .decompressor = if (options.per_message_deflate)
+            try zlib.BufferDecompressor.init(allocator, .{ .header = .none })
+        else
+            null,
     };
 }
 

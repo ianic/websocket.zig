@@ -273,6 +273,11 @@ pub fn Decompressor(comptime ReaderType: type) type {
             zStreamDeinit(self.allocator, self.stream);
         }
 
+        pub fn reset(self: *Self) void {
+            const rc = c.inflateReset(self.stream);
+            if (rc != c.Z_OK) return errorFromInt(rc);
+        }
+
         pub fn read(self: *Self, buf: []u8) ReaderError!usize {
             std.debug.print("pos: {d} buf.len {d}\n", .{ self.pos, buf.len });
             self.pos += try self.inner.readAll(self.tmp[self.pos..]);

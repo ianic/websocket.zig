@@ -93,8 +93,8 @@ pub fn Client(comptime ReaderType: type, comptime WriterType: type) type {
                 "Connection: Upgrade" ++ crlf ++
                 "Sec-WebSocket-Key: {s}" ++ crlf ++
                 "Sec-WebSocket-Version: 13" ++ crlf ++
-                "Sec-WebSocket-Extensions: permessage-deflate;client_no_context_takeover;server_no_context_takeover" ++ crlf ++
-                //"Sec-WebSocket-Extensions: permessage-deflate" ++ crlf ++
+                //"Sec-WebSocket-Extensions: permessage-deflate;client_no_context_takeover;server_no_context_takeover" ++ crlf ++
+                "Sec-WebSocket-Extensions: permessage-deflate" ++ crlf ++
                 crlf;
             try self.writer.writeAll(try fmt.bufPrint(&buf, format, .{ host, path, host, self.sec_key }));
         }
@@ -247,7 +247,7 @@ test "valid ws handshake" {
         "Connection: Upgrade\r\n" ++
         "Sec-WebSocket-Key: 3yMLSWFdF1MH1YDDPW/aYQ==\r\n" ++
         "Sec-WebSocket-Version: 13\r\n" ++
-        "Sec-WebSocket-Extensions: permessage-deflate;client_no_context_takeover;server_no_context_takeover\r\n\r\n";
+        "Sec-WebSocket-Extensions: permessage-deflate\r\n\r\n";
     const http_response =
         "HTTP/1.1 101 Switching Protocols\r\n" ++
         "Upgrade: websocket\r\n" ++
