@@ -8,7 +8,6 @@ const Allocator = mem.Allocator;
 const utf8ValidateSlice = std.unicode.utf8ValidateSlice;
 
 const Frame = @import("frame.zig").Frame;
-const Error = @import("frame.zig").Error;
 
 pub const Message = struct {
     pub const Encoding = enum {
