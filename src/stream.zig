@@ -104,29 +104,32 @@ pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
         }
 
         fn readMessage(self: *Self) !Message {
+            // read first frame
             var frame = try self.readDataFrame();
+
+            // get encoding and compressed from first frame
             const encoding: Message.Encoding = if (frame.opcode == .binary) .binary else .text;
             const compressed = frame.isCompressed();
-            if (frame.isFin() and !compressed)
-                return self.initMessage(encoding, frame.payload); // if single frame return frame payload as message payload
 
-            // collect frames payloads
+            if (frame.isFin() and !compressed)
+                // if single frame return frame payload as message payload
+                return self.initMessage(encoding, frame.payload);
+
+            // collect frames payload
             var payload = try std.ArrayList(u8).initCapacity(self.allocator, frame.payload.len);
-            try payload.appendSlice(frame.payload);
-            if (frame.isFin() and compressed) {
-                return self.initCompressedMessage(encoding, &payload);
-            }
-            frame.deinit();
             defer payload.deinit();
 
             while (true) {
-                var next = try self.readDataFrame();
-                defer next.deinit();
-                try payload.appendSlice(next.payload);
-                if (next.isFin()) return if (!compressed)
+                try payload.appendSlice(frame.payload);
+                const isFin = frame.isFin();
+                frame.deinit();
+
+                if (isFin) return if (!compressed)
                     self.initMessage(encoding, try payload.toOwnedSlice())
                 else
                     self.initCompressedMessage(encoding, &payload);
+
+                frame = try self.readDataFrame();
             }
         }
 
@@ -139,10 +142,6 @@ pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
         }
 
         fn initCompressedMessage(self: *Self, encoding: Message.Encoding, compressed: *std.ArrayList(u8)) !Message {
-            defer {
-                //showBuf(compressed.items);
-            }
-
             if (self.decompressor) |*dcmp| {
                 try compressed.appendSlice(&[_]u8{ 0x0, 0x0, 0xff, 0xff });
 
