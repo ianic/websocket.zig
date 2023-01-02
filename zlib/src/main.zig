@@ -279,7 +279,7 @@ pub fn Decompressor(comptime ReaderType: type) type {
         }
 
         pub fn read(self: *Self, buf: []u8) ReaderError!usize {
-            std.debug.print("pos: {d} buf.len {d}\n", .{ self.pos, buf.len });
+            //std.debug.print("pos: {d} buf.len {d}\n", .{ self.pos, buf.len });
             self.pos += try self.inner.readAll(self.tmp[self.pos..]);
 
             self.stream.next_in = &self.tmp;
