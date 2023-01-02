@@ -7,6 +7,17 @@ const utf8ValidateSlice = std.unicode.utf8ValidateSlice;
 
 var rnd = std.rand.DefaultPrng.init(0);
 
+pub const Error = error{
+    ReservedOpcode,
+    InvalidCloseCode,
+    InvalidUtf8Payload,
+    TooBigPayloadForControlFrame,
+    FragmentedControlFrame,
+    InvalidFragmentation,
+    DeflateNotSupported,
+    ReservedRsv,
+};
+
 pub const Frame = struct {
     pub const Opcode = enum(u4) {
         continuation = 0,
@@ -28,7 +39,7 @@ pub const Frame = struct {
                 8 => .close,
                 9 => .ping,
                 0xa => .pong,
-                else => return error.ReservedOpcode,
+                else => return Error.ReservedOpcode,
             };
         }
     };
@@ -65,7 +76,7 @@ pub const Frame = struct {
             1007...1011 => {},
             3000...3999 => {},
             4000...4999 => {},
-            else => return error.InvalidCloseCode,
+            else => return Error.InvalidCloseCode,
         };
     }
 
@@ -75,13 +86,13 @@ pub const Frame = struct {
     }
 
     fn assertValidClose(self: *Self) !void {
-        if (!utf8ValidateSlice(self.closePayload())) return error.InvalidUtf8Payload;
+        try assertValidUtf8(self.closePayload());
         try self.assertValidCloseCode();
     }
 
     fn assertValidControl(self: *Self) !void {
-        if (self.payload.len > 125) return error.TooBigPayloadForControlFrame;
-        if (self.fin == 0) return error.FragmentedControlFrame;
+        if (self.payload.len > 125) return Error.TooBigPayloadForControlFrame;
+        if (self.fin == 0) return Error.FragmentedControlFrame;
     }
 
     pub fn isFin(self: *Self) bool {
@@ -125,7 +136,7 @@ pub const Frame = struct {
     }
 
     pub fn assertValidContinuation(self: *Self, prev: Fragment) !void {
-        if (!self.isValidContinuation(prev)) return error.InvalidFragmentation;
+        if (!self.isValidContinuation(prev)) return Error.InvalidFragmentation;
     }
 
     pub fn encode(self: Self, buf: []u8, close_code: u16) usize {
@@ -198,5 +209,14 @@ pub const Frame = struct {
     pub fn maskUnmask(mask: []const u8, buf: []u8) void {
         for (buf) |c, i|
             buf[i] = c ^ mask[i % 4];
+    }
+
+    pub fn assertRsvBits(rsv1: u1, rsv2: u1, rsv3: u1, deflate_supported: bool) !void {
+        if (rsv1 == 1 and !deflate_supported) return Error.DeflateNotSupported;
+        if (rsv2 == 1 or rsv3 == 1) return Error.ReservedRsv;
+    }
+
+    pub fn assertValidUtf8(data: []const u8) !void {
+        if (!utf8ValidateSlice(data)) return Error.InvalidUtf8Payload;
     }
 };

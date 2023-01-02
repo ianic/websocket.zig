@@ -8,6 +8,7 @@ const Allocator = mem.Allocator;
 const utf8ValidateSlice = std.unicode.utf8ValidateSlice;
 
 const Frame = @import("frame.zig").Frame;
+const Error = @import("frame.zig").Error;
 
 pub const Message = struct {
     pub const Encoding = enum {
@@ -37,7 +38,7 @@ pub const Message = struct {
 
     fn validate(self: *Self) !void {
         if (self.encoding == .text)
-            if (!utf8ValidateSlice(self.payload)) return error.InvalidUtf8Payload;
+            try Frame.assertValidUtf8(self.payload);
     }
 };
 
@@ -150,7 +151,7 @@ pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
                 if (self.options.server_no_context_takeover) try dcmp.reset();
                 return Message.init(self.allocator, encoding, decompressed);
             }
-            return error.CompressionNotSupported;
+            unreachable;
         }
 
         pub fn deinit(self: *Self) void {
@@ -214,8 +215,7 @@ pub fn Reader(comptime ReaderType: type) type {
             const rsv1 = try self.readBit();
             const rsv2 = try self.readBit();
             const rsv3 = try self.readBit();
-            if (rsv1 == 1 and !self.deflate_supported) return error.DeflateNotSupported;
-            if (rsv2 == 1 or rsv3 == 1) return error.ReservedRsv;
+            try Frame.assertRsvBits(rsv1, rsv2, rsv3, self.deflate_supported);
 
             const opcode = try self.readOpcode();
             const mask = try self.readBit();

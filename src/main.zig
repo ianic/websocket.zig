@@ -2,6 +2,7 @@ const std = @import("std");
 
 pub const handshake = @import("handshake.zig");
 pub const stream = @import("stream.zig");
+pub const Message = stream.Message;
 
 pub fn client(
     allocator: std.mem.Allocator,
