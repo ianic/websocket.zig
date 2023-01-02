@@ -26,57 +26,27 @@ pub fn main() !void {
 
 fn runTestCase(allocator: Allocator, no: usize) !void {
     var path_buf: [128]u8 = undefined;
-    const path = try std.fmt.bufPrint(&path_buf, "/runCase?case={d}&agent=websocket.zig", .{no});
+    const path = try std.fmt.bufPrint(&path_buf, "/runCase?case={d}&agent=websocket_test.zig", .{no});
 
-    var tcp_client = try TcpClient.init("127.0.0.1", 9001);
+    var tcp_stm = try std.net.tcpConnectToHost(allocator, "127.0.0.1", 9001);
     var stm = try ws.client(
         allocator,
-        tcp_client.client.reader(0),
-        tcp_client.client.writer(0),
+        tcp_stm.reader(),
+        tcp_stm.writer(),
         "127.0.0.1:9001",
         path,
     );
     defer stm.deinit();
-    defer tcp_client.close();
+    defer tcp_stm.close();
 
     // echo loop read and send message
     while (stm.nextMessage()) |msg| {
         try stm.sendMessage(msg);
     }
-    if (stm.err) |err| {
-        //std.debug.print("e", .{});
-        std.log.err("case: {d} {}", .{ no, err });
+    if (stm.err) |_| {
+        std.debug.print("e", .{});
+        //std.log.err("case: {d} {}", .{ no, err });
     } else {
         std.debug.print(".", .{});
     }
 }
-
-const tcp = net.tcp;
-const net = std.x.net;
-
-pub const TcpClient = struct {
-    client: tcp.Client,
-
-    const Self = @This();
-
-    pub fn init(host: []const u8, port: u16) !Self {
-        const addr = net.ip.Address.initIPv4(try std.x.os.IPv4.parse(host), port);
-        const client = try tcp.Client.init(.ip, .{ .close_on_exec = true });
-        try client.connect(addr);
-        errdefer client.deinit();
-        return .{ .client = client };
-    }
-
-    pub fn reader(self: *Self) tcp.Client.Reader {
-        return self.client.reader(0);
-    }
-
-    pub fn writer(self: *Self) tcp.Client.Writer {
-        return self.client.writer(0);
-    }
-
-    pub fn close(self: *Self) void {
-        self.client.shutdown(.both) catch {};
-        self.client.deinit();
-    }
-};
