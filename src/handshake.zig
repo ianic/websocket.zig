@@ -114,6 +114,8 @@ pub fn Client(comptime ReaderType: type, comptime WriterType: type) type {
                     self.options.client_no_context_takeover = h.valueIncludes("client_no_context_takeover");
                     if (h.paramValue("server_max_window_bits")) |v|
                         self.options.server_max_window_bits = std.fmt.parseInt(u4, v, 10) catch 15;
+                    if (h.paramValue("client_max_window_bits")) |v|
+                        self.options.client_max_window_bits = std.fmt.parseInt(u4, v, 10) catch 15;
                 }
             }
         }
@@ -288,7 +290,7 @@ test "read server_max_window_bits" {
         "Upgrade: WebSocket" ++ crlf ++
         "Connection: Upgrade" ++ crlf ++
         "Sec-WebSocket-Accept: ZBAEEEGewknsjRb8mwp3/qVSKxw=" ++ crlf ++
-        "Sec-WebSocket-Extensions: permessage-deflate; server_max_window_bits=12" ++ crlf ++
+        "Sec-WebSocket-Extensions: permessage-deflate; server_max_window_bits=12; client_max_window_bits=13" ++ crlf ++
         crlf;
 
     var output: [1024]u8 = undefined;
@@ -312,6 +314,8 @@ test "read server_max_window_bits" {
     try testing.expect(max_window_bits != null);
     try testing.expectEqualSlices(u8, max_window_bits.?, "12");
     try testing.expectEqual(cs.options.server_max_window_bits, 12);
+
+    try testing.expectEqual(cs.options.client_max_window_bits, 13);
 }
 
 // debug helper

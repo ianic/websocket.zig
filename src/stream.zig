@@ -42,6 +42,7 @@ pub const Message = struct {
 };
 
 pub const Options = struct {
+    // is compression supported
     per_message_deflate: bool = false,
 
     // false indicates that the client can decompress a message that the server built using context takeover
@@ -49,7 +50,16 @@ pub const Options = struct {
 
     // false indicates that the server can decompress messages built by the client using context takeover
     client_no_context_takeover: bool = false,
+
+    // by including this extension parameter in an extension negotiation response, a server
+    // limits the LZ77 sliding window size that the client uses to compress messages
+    client_max_window_bits: u4 = 15,
+
+    // limits the LZ77 sliding window size that the server will use to compress messages
     server_max_window_bits: u4 = 15,
+
+    // don't compress payload smaller than threshold
+    compress_threshold: usize = 126,
 };
 
 pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
@@ -62,6 +72,7 @@ pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
 
         last_frame_fragment: Frame.Fragment = .unfragmented,
         decompressor: ?zlib.BufferDecompressor = null,
+        compressor: ?zlib.BufferCompressor = null,
         options: Options = .{},
 
         const Self = @This();
@@ -134,7 +145,30 @@ pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
         }
 
         pub fn sendMessage(self: *Self, msg: Message) !void {
+            if (msg.payload.len >= self.options.compress_threshold) {
+                if (self.compressor) |*cmp| {
+                    // send compressed
+                    const payload = try cmp.compressAllAlloc(msg.payload);
+                    defer self.allocator.free(payload);
+                    if (self.options.client_no_context_takeover) try cmp.reset();
+                    try self.writer.compressedMessage(Message{ .encoding = msg.encoding, .payload = payload[0 .. payload.len - 4] });
+                    return;
+                }
+            }
             try self.writer.message(msg);
+        }
+
+        const SendOptions = struct {
+            encoding: Message.Encoding = .text,
+            compress: bool = true,
+        };
+
+        pub fn send(self: *Self, payload: []const u8, options: SendOptions) !void {
+            const msg = Message{ .encoding = .encoding, .payload = payload };
+            if (options.compress)
+                try self.sendMessage(msg)
+            else
+                try self.writer.message(msg);
         }
 
         fn initMessage(self: *Self, encoding: Message.Encoding, payload: []const u8) !Message {
@@ -266,24 +300,36 @@ pub fn Writer(comptime WriterType: type) type {
             try self.writer.writeAll(self.buf[0..bytes]);
         }
 
+        pub fn compressedMessage(self: *Self, msg: Message) !void {
+            try self.message_(msg, true);
+        }
+
         pub fn message(self: *Self, msg: Message) !void {
+            try self.message_(msg, false);
+        }
+
+        fn message_(self: *Self, msg: Message, compressed: bool) !void {
             var sent_payload: usize = 0;
             // send multiple frames if needed
             while (true) {
+                const first_frame = sent_payload == 0;
+
                 var fin: u1 = 1;
+                var rsv1: u1 = if (compressed and first_frame) 1 else 0;
+
                 // use frame payload that fits into write_buf
                 var frame_payload = msg.payload[sent_payload..];
                 if (frame_payload.len + Frame.max_header > self.buf.len) {
                     frame_payload = frame_payload[0 .. self.buf.len - Frame.max_header];
                     fin = 0;
                 }
-                const opcode = if (sent_payload == 0) // set opcode for the first frame
+                const opcode = if (first_frame) // set opcode for the first frame
                     if (msg.encoding == .text) Frame.Opcode.text else Frame.Opcode.binary
                 else
                     Frame.Opcode.continuation; // for all other frames
 
                 // create frame
-                const frame = Frame{ .fin = fin, .opcode = opcode, .payload = frame_payload, .mask = 1 };
+                const frame = Frame{ .fin = fin, .rsv1 = rsv1, .opcode = opcode, .payload = frame_payload, .mask = 1 };
                 // encode frame into write_buf and send it to stream
                 const bytes = frame.encode(self.buf, 0);
                 try self.writer.writeAll(self.buf[0..bytes]);
@@ -331,6 +377,10 @@ pub fn client(
         .options = options,
         .decompressor = if (options.per_message_deflate)
             try zlib.BufferDecompressor.init(allocator, .{ .header = .none, .window_size = options.server_max_window_bits })
+        else
+            null,
+        .compressor = if (options.per_message_deflate)
+            try zlib.BufferCompressor.init(allocator, .{ .header = .none, .window_size = options.client_max_window_bits })
         else
             null,
     };

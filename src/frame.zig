@@ -152,7 +152,7 @@ pub const Frame = struct {
         assert(buf.len >= required_buf_len);
 
         buf[0] = (@intCast(u8, self.fin) << 7) +
-            //(@intCast(u8, self.rsv1) << 6) +
+            (@intCast(u8, self.rsv1) << 6) +
             //(@intCast(u8, self.rsv2) << 5) +
             //(@intCast(u8, self.rsv3) << 4) +
             @enumToInt(self.opcode);

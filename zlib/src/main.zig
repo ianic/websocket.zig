@@ -334,6 +334,11 @@ pub const BufferCompressor = struct {
         zStreamDeinit(self.allocator, self.stream);
     }
 
+    pub fn reset(self: *Self) !void {
+        const rc = c.deflateReset(self.stream);
+        if (rc != c.Z_OK) return errorFromInt(rc);
+    }
+
     pub fn compressAllAlloc(self: *Self, uncompressed: []const u8) ![]u8 {
         self.stream.next_in = @intToPtr([*]u8, @ptrToInt(uncompressed.ptr));
         self.stream.avail_in = @intCast(c_uint, uncompressed.len);
