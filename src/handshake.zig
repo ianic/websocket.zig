@@ -281,7 +281,7 @@ test "valid ws handshake" {
     try testing.expectEqualSlices(u8, stm.written(), &http_request.*);
 }
 
-test "read client_max_windwo_bits" {
+test "read server_max_window_bits" {
     const http_response = "HTTP/1.1 101 Switching Protocols" ++ crlf ++
         "Server: AutobahnTestSuite/0.8.2-0.10.9" ++ crlf ++
         "X-Powered-By: AutobahnPython/0.10.9" ++ crlf ++
@@ -301,16 +301,16 @@ test "read client_max_windwo_bits" {
     cs.readOptions(&rsp);
     try testing.expect(cs.options.per_message_deflate);
 
-    var cmwb: ?[]const u8 = null;
+    var max_window_bits: ?[]const u8 = null;
     for (rsp.headers) |h| {
         if (h.keyMatch("sec-websocket-extensions")) {
             if (h.paramValue("server_max_window_bits")) |v| {
-                cmwb = v;
+                max_window_bits = v;
             }
         }
     }
-    try testing.expect(cmwb != null);
-    try testing.expectEqualSlices(u8, cmwb.?, "12");
+    try testing.expect(max_window_bits != null);
+    try testing.expectEqualSlices(u8, max_window_bits.?, "12");
     try testing.expectEqual(cs.options.server_max_window_bits, 12);
 }
 
