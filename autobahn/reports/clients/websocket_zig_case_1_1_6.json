@@ -8,7 +8,7 @@
    "createWirelog": true,
    "description": "Send text message message with payload of length 65535.",
    "droppedByMe": true,
-   "duration": 14,
+   "duration": 12,
    "expectation": "Receive echo'ed text message (with payload as sent). Clean close with normal code.",
    "expected": {
       "OK": [
@@ -54,11 +54,13 @@
    "rxOctetStats": {
       "8": 1,
       "275": 1,
-      "7240": 1,
-      "20450": 1,
-      "37981": 1
+      "410": 1,
+      "5942": 1,
+      "7240": 2,
+      "12091": 1,
+      "32748": 1
    },
-   "started": "2023-01-03T07:14:59.813Z",
+   "started": "2023-01-03T19:55:24.806Z",
    "trafficStats": null,
    "txFrameStats": {
       "1": 1,
@@ -138,7 +140,7 @@
       [
          "RO",
          [
-            20450,
+            7240,
             "80c3d66780c3d66780c3d66780c3d66780c3d66780c3d66780c3d66780c3d66780c3d66780c3d66780c3d66780c3d66780c3d66780c3d66780c3d66780c3d667 ..."
          ]
       ],
@@ -167,6 +169,13 @@
          "c10c9643"
       ],
       [
+         "RO",
+         [
+            5942,
+            "d03a0acdd03a0acdd03a0acdd03a0acdd03a0acdd03a0acdd03a0acdd03a0acdd03a0acdd03a0acdd03a0acdd03a0acdd03a0acdd03a0acdd03a0acdd03a0acd ..."
+         ]
+      ],
+      [
          "RF",
          [
             4082,
@@ -177,6 +186,13 @@
          0,
          true,
          "20e7fa10"
+      ],
+      [
+         "RO",
+         [
+            32748,
+            "8692d03a8692d03a8692d03a8692d03a8692d03a8692d03a8692d03a00fe0ff2f79614ddddbc3ef7ddbc3ef7ddbc3ef7ddbc3ef7ddbc3ef7ddbc3ef7ddbc3ef7 ..."
+         ]
       ],
       [
          "RF",
@@ -201,13 +217,6 @@
          0,
          true,
          "f79614dd"
-      ],
-      [
-         "RO",
-         [
-            37981,
-            "d6fa822ed6fa822ed6fa822ed6fa822ed6fa822ed6fa822ed6fa822ed6fa822ed6fa822ed6fa822ed6fa822ed6fa822ed6fa822ed6fa822ed6fa822ed6fa822e ..."
-         ]
       ],
       [
          "RF",
@@ -294,6 +303,13 @@
          "df443a06"
       ],
       [
+         "RO",
+         [
+            12091,
+            "00fe0ff297817748bdab5d62bdab5d62bdab5d62bdab5d62bdab5d62bdab5d62bdab5d62bdab5d62bdab5d62bdab5d62bdab5d62bdab5d62bdab5d62bdab5d62 ..."
+         ]
+      ],
+      [
          "RF",
          [
             4082,
@@ -316,6 +332,13 @@
          0,
          true,
          "8738a01b"
+      ],
+      [
+         "RO",
+         [
+            410,
+            "433f64c7433f64c7433f64c7433f64c7433f64c7433f64c7433f64c7433f64c7433f64c7433f64c7433f64c7433f64c7433f64c7433f64c7433f64c7433f64c7 ..."
+         ]
       ],
       [
          "RF",

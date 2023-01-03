@@ -8,7 +8,7 @@
    "createWirelog": true,
    "description": "Send 10 Pings with payload.",
    "droppedByMe": true,
-   "duration": 5,
+   "duration": 11,
    "expectation": "Pongs for our Pings with all the payloads. Note: This is not required by the Spec .. but we check for this behaviour anyway. Clean close with normal code.",
    "expected": {
       "OK": [
@@ -125,7 +125,7 @@
       "150": 1,
       "276": 1
    },
-   "started": "2023-01-03T07:14:59.975Z",
+   "started": "2023-01-03T19:55:24.966Z",
    "trafficStats": null,
    "txFrameStats": {
       "8": 1,

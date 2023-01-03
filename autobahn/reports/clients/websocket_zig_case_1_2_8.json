@@ -8,7 +8,7 @@
    "createWirelog": true,
    "description": "Send binary message message with payload of length 65536. Sent out data in chops of 997 octets.",
    "droppedByMe": true,
-   "duration": 25,
+   "duration": 20,
    "expectation": "Receive echo'ed binary message (with payload as sent). Clean close with normal code.",
    "expected": {
       "OK": [
@@ -54,11 +54,12 @@
    "rxOctetStats": {
       "8": 1,
       "276": 1,
+      "5942": 1,
+      "12502": 1,
       "14480": 1,
-      "22232": 1,
-      "28960": 1
+      "32748": 1
    },
-   "started": "2023-01-03T07:14:59.897Z",
+   "started": "2023-01-03T19:55:24.885Z",
    "trafficStats": null,
    "txFrameStats": {
       "2": 1,
@@ -683,7 +684,7 @@
       [
          "RO",
          [
-            28960,
+            5942,
             "d6c8de23d6c8de23d6c8de23d6c8de23d6c8de23d6c8de23d6c8de23d6c8de23d6c8de23d6c8de23d6c8de23d6c8de23d6c8de23d6c8de23d6c8de23d6c8de23 ..."
          ]
       ],
@@ -698,6 +699,13 @@
          0,
          true,
          "20dd2836"
+      ],
+      [
+         "RO",
+         [
+            32748,
+            "8a5477a18a5477a18a5477a18a5477a18a5477a18a5477a18a5477a100fe0ff204473afdfab9c403fab9c403fab9c403fab9c403fab9c403fab9c403fab9c403 ..."
+         ]
       ],
       [
          "RF",
@@ -772,13 +780,6 @@
          "af87c0f8"
       ],
       [
-         "RO",
-         [
-            22232,
-            "8b3299f38b3299f38b3299f38b3299f38b3299f38b3299f38b3299f38b3299f38b3299f38b3299f38b3299f38b3299f38b3299f38b3299f38b3299f38b3299f3 ..."
-         ]
-      ],
-      [
          "RF",
          [
             4082,
@@ -813,6 +814,13 @@
          0,
          true,
          "20c6ea06"
+      ],
+      [
+         "RO",
+         [
+            12502,
+            "00fe0ff252e3dcabac1d2255ac1d2255ac1d2255ac1d2255ac1d2255ac1d2255ac1d2255ac1d2255ac1d2255ac1d2255ac1d2255ac1d2255ac1d2255ac1d2255 ..."
+         ]
       ],
       [
          "RF",

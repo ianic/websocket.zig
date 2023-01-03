@@ -8,7 +8,7 @@
    "createWirelog": true,
    "description": "Send text Message fragmented into 2 fragments, with both frame opcodes set to text, sent in one chop.",
    "droppedByMe": false,
-   "duration": 1,
+   "duration": 2,
    "expectation": "The connection is failed immediately, since all data frames after the initial data frame must have opcode 0.",
    "expected": {
       "OK": []
@@ -38,7 +38,7 @@
    "rxOctetStats": {
       "276": 1
    },
-   "started": "2023-01-03T07:15:00.137Z",
+   "started": "2023-01-03T19:55:25.126Z",
    "trafficStats": null,
    "txFrameStats": {
       "1": 2

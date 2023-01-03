@@ -8,7 +8,7 @@
    "createWirelog": true,
    "description": "Send binary message message with payload of length 65536.",
    "droppedByMe": true,
-   "duration": 11,
+   "duration": 10,
    "expectation": "Receive echo'ed binary message (with payload as sent). Clean close with normal code.",
    "expected": {
       "OK": [
@@ -54,13 +54,11 @@
    "rxOctetStats": {
       "8": 1,
       "276": 1,
-      "8180": 1,
-      "8412": 1,
-      "12270": 1,
-      "16360": 1,
-      "20450": 1
+      "14480": 1,
+      "20422": 1,
+      "30770": 1
    },
-   "started": "2023-01-03T07:14:59.885Z",
+   "started": "2023-01-03T19:55:24.875Z",
    "trafficStats": null,
    "txFrameStats": {
       "2": 1,
@@ -121,7 +119,7 @@
       [
          "RO",
          [
-            8180,
+            14480,
             "02fe0ff24d1a438bb3e4bd75b3e4bd75b3e4bd75b3e4bd75b3e4bd75b3e4bd75b3e4bd75b3e4bd75b3e4bd75b3e4bd75b3e4bd75b3e4bd75b3e4bd75b3e4bd75 ..."
          ]
       ],
@@ -150,13 +148,6 @@
          "4ec0c2dd"
       ],
       [
-         "RO",
-         [
-            16360,
-            "00fe0ff22d8ccb43d37235bdd37235bdd37235bdd37235bdd37235bdd37235bdd37235bdd37235bdd37235bdd37235bdd37235bdd37235bdd37235bdd37235bd ..."
-         ]
-      ],
-      [
          "RF",
          [
             4082,
@@ -167,6 +158,13 @@
          0,
          true,
          "2d8ccb43"
+      ],
+      [
+         "RO",
+         [
+            20422,
+            "787211a0787211a0787211a0787211a0787211a0787211a0787211a0787211a0787211a0787211a0787211a0787211a0787211a0787211a0787211a0787211a0 ..."
+         ]
       ],
       [
          "RF",
@@ -205,13 +203,6 @@
          "8475e4b0"
       ],
       [
-         "RO",
-         [
-            20450,
-            "00fe0ff2ec2f39f812d1c70612d1c70612d1c70612d1c70612d1c70612d1c70612d1c70612d1c70612d1c70612d1c70612d1c70612d1c70612d1c70612d1c706 ..."
-         ]
-      ],
-      [
          "RF",
          [
             4082,
@@ -234,6 +225,13 @@
          0,
          true,
          "6fe8ed63"
+      ],
+      [
+         "RO",
+         [
+            30770,
+            "9dba10d59dba10d59dba10d59dba10d59dba10d59dba10d59dba10d59dba10d59dba10d59dba10d59dba10d59dba10d59dba10d59dba10d59dba10d59dba10d5 ..."
+         ]
       ],
       [
          "RF",
@@ -272,13 +270,6 @@
          "d90e65b5"
       ],
       [
-         "RO",
-         [
-            12270,
-            "00fe0ff289ddba7a7723448477234484772344847723448477234484772344847723448477234484772344847723448477234484772344847723448477234484 ..."
-         ]
-      ],
-      [
          "RF",
          [
             4082,
@@ -313,13 +304,6 @@
          0,
          true,
          "58b2f593"
-      ],
-      [
-         "RO",
-         [
-            8412,
-            "00fe0ff2d07162a12e8f9c5f2e8f9c5f2e8f9c5f2e8f9c5f2e8f9c5f2e8f9c5f2e8f9c5f2e8f9c5f2e8f9c5f2e8f9c5f2e8f9c5f2e8f9c5f2e8f9c5f2e8f9c5f ..."
-         ]
       ],
       [
          "RF",

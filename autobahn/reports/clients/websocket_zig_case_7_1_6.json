@@ -7,8 +7,8 @@
    "createStats": true,
    "createWirelog": true,
    "description": "Send 256K message followed by close then a ping",
-   "droppedByMe": true,
-   "duration": 1003,
+   "droppedByMe": false,
+   "duration": 21,
    "expectation": "Case outcome depends on implementation defined close behavior. Message and close frame are sent back to back. If the close frame is processed before the text message write is complete (as can happen in asynchronous processing models) the close frame is processed first and the text message may not be received or may only be partially recieved.",
    "expected": {
       "NON-STRICT": [],
@@ -42,19 +42,22 @@
    "result": "Close was processed before text message could be returned.",
    "resultClose": "The spec requires the connection to be failed cleanly here",
    "rxFrameStats": {
-      "0": 63,
+      "0": 60,
       "1": 1
    },
    "rxOctetStats": {
       "277": 1,
+      "5942": 1,
       "14480": 1,
+      "15877": 1,
+      "20631": 1,
       "28960": 1,
-      "32480": 1,
-      "58906": 1,
-      "61398": 1,
-      "65536": 1
+      "32528": 1,
+      "32720": 1,
+      "32768": 2,
+      "32816": 1
    },
-   "started": "2023-01-03T07:15:10.953Z",
+   "started": "2023-01-03T19:55:35.966Z",
    "trafficStats": null,
    "txFrameStats": {
       "1": 2,
@@ -69,8 +72,8 @@
       "262154": 1
    },
    "wasClean": false,
-   "wasCloseHandshakeTimeout": true,
-   "wasNotCleanReason": "peer did not respond (in time) in closing handshake",
+   "wasCloseHandshakeTimeout": false,
+   "wasNotCleanReason": "peer dropped the TCP connection without previous WebSocket closing handshake",
    "wasOpenHandshakeTimeout": false,
    "wasServerConnectionDropTimeout": false,
    "wirelog": [
@@ -227,7 +230,7 @@
       [
          "RO",
          [
-            28960,
+            5942,
             "77818e3936d6fb5e2fdafe4b07f3bf1c7294a61077818e3936d6fb5e2fdafe4b07f3bf1c7294a61077818e3936d6fb5e2fdafe4b07f3bf1c7294a61077818e39 ..."
          ]
       ],
@@ -242,6 +245,13 @@
          0,
          true,
          "cc7845b2"
+      ],
+      [
+         "RO",
+         [
+            28960,
+            "298f74d5308371c018aa30976dcd299b68d801b2298f74d5308371c000fe0ff2713b4633337a3557461d2c5b43080472025f71151b537400337a3557461d2c5b ..."
+         ]
       ],
       [
          "RF",
@@ -316,13 +326,6 @@
          "a103c5cd"
       ],
       [
-         "RO",
-         [
-            58906,
-            "46ba785b5fb67d4e779f3c1902f8251507ed0d3c46ba785b5fb67d4e779f3c1902f8251507ed0d3c46ba785b5fb67d4e779f3c1902f8251507ed0d3c46ba785b ..."
-         ]
-      ],
-      [
          "RF",
          [
             4082,
@@ -345,6 +348,13 @@
          0,
          true,
          "c157f4ad"
+      ],
+      [
+         "RO",
+         [
+            15877,
+            "deee9d179fb9e87086b5ed65ae9cac32dbfbb53edeee9d179fb9e87086b5ed65ae9cac32dbfbb53edeee9d179fb9e87086b5ed65ae9cac32dbfbb53edeee9d17 ..."
+         ]
       ],
       [
          "RF",
@@ -381,6 +391,13 @@
          0,
          true,
          "72c7a7d2"
+      ],
+      [
+         "RO",
+         [
+            20631,
+            "c87afbedaf63f7e8ba4bdea9ed3eb9b0e13bac98c87afbedaf63f7e8ba4bdea9ed3eb9b0e13bac98c87afbedaf63f7e8ba4bdea9ed3eb9b0e13bac98c87afbed ..."
+         ]
       ],
       [
          "RF",
@@ -455,6 +472,13 @@
          "619f5ca1"
       ],
       [
+         "RO",
+         [
+            32816,
+            "00fe0ff277fcae24049899021d949c1735bddd4040dac44c45cfec65049899021d949c1735bddd4040dac44c45cfec65049899021d949c1735bddd4040dac44c ..."
+         ]
+      ],
+      [
          "RF",
          [
             4082,
@@ -503,13 +527,6 @@
          "fee02b8a"
       ],
       [
-         "RO",
-         [
-            61398,
-            "97aac855d6fdbd32cff1b827e7d8f97092bfe07c97aac855d6fdbd32cff1b827e7d8f97092bfe07c97aac855d6fdbd32cff1b827e7d8f97092bfe07c97aac855 ..."
-         ]
-      ],
-      [
          "RF",
          [
             4082,
@@ -556,6 +573,13 @@
          0,
          true,
          "2a00ea24"
+      ],
+      [
+         "RO",
+         [
+            32720,
+            "f67b0140de524017ab35591bae207132ef770455f67b0140de524017ab35591bae207132ef770455f67b0140de524017ab35591bae207132ef770455f67b0140 ..."
+         ]
       ],
       [
          "RF",
@@ -654,6 +678,13 @@
          "17c8a4f8"
       ],
       [
+         "RO",
+         [
+            32768,
+            "8ef6462497fa4331bfd30266cab41b6acfa133438ef6462497fa4331bfd30266cab41b6acfa133438ef6462497fa4331bfd30266cab41b6acfa133438ef64624 ..."
+         ]
+      ],
+      [
          "RF",
          [
             4082,
@@ -688,13 +719,6 @@
          0,
          true,
          "ca4254ef"
-      ],
-      [
-         "RO",
-         [
-            65536,
-            "029d1a6a2ab45b3d5fd342315ac66a181b911f7f029d1a6a2ab45b3d5fd342315ac66a181b911f7f029d1a6a2ab45b3d5fd342315ac66a181b911f7f029d1a6a ..."
-         ]
       ],
       [
          "RF",
@@ -755,6 +779,13 @@
          0,
          true,
          "8c109cd6"
+      ],
+      [
+         "RO",
+         [
+            32768,
+            "7cd246cc54fb079b219c1e97248936be65de43d97cd246cc54fb079b219c1e97248936be65de43d97cd246cc54fb079b219c1e97248936be65de43d97cd246cc ..."
+         ]
       ],
       [
          "RF",
@@ -853,6 +884,13 @@
          "3ff64dd3"
       ],
       [
+         "RO",
+         [
+            32528,
+            "2ae6d6705f81cf7c5a94e7551bc3923202cf97272ae6d6705f81cf7c5a94e7551bc3923202cf97272ae6d6705f81cf7c5a94e7551bc3923202cf97272ae6d670 ..."
+         ]
+      ],
+      [
          "RF",
          [
             4082,
@@ -887,13 +925,6 @@
          0,
          true,
          "d43685bd"
-      ],
-      [
-         "RO",
-         [
-            32480,
-            "bda81916b8bd313ff9ea4458e0e6414dc8cf001abda81916b8bd313ff9ea4458e0e6414dc8cf001abda81916b8bd313ff9ea4458e0e6414dc8cf001abda81916 ..."
-         ]
       ],
       [
          "RF",
@@ -954,42 +985,6 @@
          0,
          true,
          "502fd674"
-      ],
-      [
-         "RF",
-         [
-            4082,
-            "sd7&jh23BAsd7&jh23BAsd7&jh23BAsd7&jh23BAsd7&jh23BAsd7&jh23BAsd7& ..."
-         ],
-         0,
-         false,
-         0,
-         true,
-         "b1f7113a"
-      ],
-      [
-         "RF",
-         [
-            4082,
-            "7&jh23BAsd7&jh23BAsd7&jh23BAsd7&jh23BAsd7&jh23BAsd7&jh23BAsd7&jh ..."
-         ],
-         0,
-         false,
-         0,
-         true,
-         "c80f18fc"
-      ],
-      [
-         "RF",
-         [
-            4082,
-            "jh23BAsd7&jh23BAsd7&jh23BAsd7&jh23BAsd7&jh23BAsd7&jh23BAsd7&jh23 ..."
-         ],
-         0,
-         false,
-         0,
-         true,
-         "29febc8d"
       ]
    ]
 }

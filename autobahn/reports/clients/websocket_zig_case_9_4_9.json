@@ -8,7 +8,7 @@
    "createWirelog": true,
    "description": "Send fragmented binary message message with message payload of length 4 * 2**20 (4M). Sent out in fragments of 4M.",
    "droppedByMe": true,
-   "duration": 205,
+   "duration": 221,
    "expectation": "Receive echo'ed binary message (with payload as sent).",
    "expected": {},
    "expectedClose": {
@@ -40,17 +40,14 @@
    "rxOctetStats": {
       "8": 1,
       "277": 1,
-      "4271": 1,
-      "5970": 1,
-      "8228": 1,
-      "14480": 1,
-      "24540": 1,
-      "32768": 64,
-      "36998": 1,
-      "44809": 1,
-      "65536": 30
+      "12270": 2,
+      "16452": 1,
+      "24817": 1,
+      "32768": 47,
+      "40719": 1,
+      "65536": 39
    },
-   "started": "2023-01-03T07:15:18.864Z",
+   "started": "2023-01-03T19:55:44.004Z",
    "trafficStats": null,
    "txFrameStats": {
       "2": 1,

@@ -8,7 +8,7 @@
    "createWirelog": true,
    "description": "Send 1000 compressed messages each of payload size 16, auto-fragment to 0 octets. Use default permessage-deflate offer.",
    "droppedByMe": true,
-   "duration": 644,
+   "duration": 672,
    "expectation": "Receive echo'ed messages (with payload as sent). Timeout case after 60 secs.",
    "expected": {},
    "expectedClose": {
@@ -41,7 +41,7 @@
       "22": 1000,
       "277": 1
    },
-   "started": "2023-01-03T07:18:41.902Z",
+   "started": "2023-01-03T19:59:03.247Z",
    "trafficStats": {
       "incomingCompressionRatio": 1.0,
       "incomingOctetsAppLevel": 16000,
@@ -142,7 +142,7 @@
          "RO",
          [
             8,
-            "8882a9f8f5adaa10"
+            "88821211cf9411f9"
          ]
       ],
       [
@@ -155,7 +155,7 @@
          true,
          0,
          true,
-         "a9f8f5ad"
+         "1211cf94"
       ]
    ]
 }

@@ -8,7 +8,7 @@
    "createWirelog": true,
    "description": "A fragmented text message is sent in multiple frames. After\n   sending the first 2 frames of the text message, a Ping is sent. Then we wait 1s,\n   then we send 2 more text fragments, another Ping and then the final text fragment.\n   Everything is legal.",
    "droppedByMe": true,
-   "duration": 1023,
+   "duration": 1022,
    "expectation": "The peer immediately answers the first Ping before\n   it has received the last text message fragment. The peer pong's back the Ping's\n   payload exactly, and echo's the payload of the fragmented message back to us.",
    "expected": {
       "OK": [
@@ -73,7 +73,7 @@
       "66": 1,
       "276": 1
    },
-   "started": "2023-01-03T07:15:00.140Z",
+   "started": "2023-01-03T19:55:25.129Z",
    "trafficStats": null,
    "txFrameStats": {
       "0": 4,

@@ -202,7 +202,7 @@ pre.wirelog_tcp_closed_by_peer {color: #fff; margin: 0; background-color: #000; 
       <center><a href="http://autobahn.ws/testsuite" title="Autobahn WebSocket Testsuite"><img src="http://autobahn.ws/static/img/ws_protocol_test_report.png"          border="0" width="820" height="46" alt="Autobahn WebSocket Testsuite Report"></img></a></center>
       <center><a href="http://autobahn.ws"           title="Autobahn WebSocket">          <img src="http://autobahn.ws/static/img/ws_protocol_test_report_autobahn.png" border="0" width="300" height="68" alt="Autobahn WebSocket">                 </img></a></center>
       <br/>
-      <p class="case case_ok">websocket.zig - <span style="font-size: 1.3em;"><b>Case 10.1.1</b></span> : Pass - <span style="font-size: 0.9em;"><b>10</b> ms @ 2023-01-03T07:15:29.647Z</a></p>
+      <p class="case case_ok">websocket.zig - <span style="font-size: 1.3em;"><b>Case 10.1.1</b></span> : Pass - <span style="font-size: 0.9em;"><b>8</b> ms @ 2023-01-03T19:55:55.174Z</a></p>
       <p class="case_text_block case_desc"><b>Case Description</b><br/><br/>Send text message with payload of length 65536 auto-fragmented with <b>autoFragmentSize = 1300</b>.</p>
       <p class="case_text_block case_expect"><b>Case Expectation</b><br/><br/>Receive echo'ed text message (with payload as sent and transmitted frame counts as expected). Clean close with normal code.</p>
 
@@ -251,9 +251,9 @@ Sec-WebSocket-Accept: jOAZ+UajwJC634xBuLnBzf1dd4k=</pre>
          <tr class="stats_header"><td>Chop Size</td><td>Count</td><td>Octets</td></tr>
          <tr class="stats_row"><td>8</td><td>1</td><td>8</td></tr>
          <tr class="stats_row"><td>277</td><td>1</td><td>277</td></tr>
-         <tr class="stats_row"><td>14480</td><td>1</td><td>14480</td></tr>
-         <tr class="stats_row"><td>18288</td><td>1</td><td>18288</td></tr>
-         <tr class="stats_row"><td>32904</td><td>1</td><td>32904</td></tr>
+         <tr class="stats_row"><td>13972</td><td>1</td><td>13972</td></tr>
+         <tr class="stats_row"><td>22740</td><td>1</td><td>22740</td></tr>
+         <tr class="stats_row"><td>28960</td><td>1</td><td>28960</td></tr>
          <tr class="stats_total"><td>Total</td><td>5</td><td>65957</td></tr>
       </table>
       <h3>Octets Transmitted by Chop Size</h3>
@@ -513,12 +513,12 @@ Sec-WebSocket-Accept: jOAZ+UajwJC634xBuLnBzf1dd4k=</pre>
          <pre class="wirelog_rx_frame">               **************************************************************** ...</pre>
          <pre class="wirelog_rx_frame">114 RX FRAME : OPCODE=0, FIN=False, RSV=0, PAYLOAD-LEN=4082, MASKED=True, MASK=3438646235303135</pre>
          <pre class="wirelog_rx_frame">               **************************************************************** ...</pre>
-         <pre class="wirelog_rx_octets">115 RX OCTETS: 79bcf62b79bcf62b79bcf62b79bcf62b79bcf62b79bcf62b79bcf62b79bcf62b79bcf62b79bcf62b79bcf62b79bcf62b79bc</pre>
-         <pre class="wirelog_rx_octets">               f62b79bcf62b79bcf62b79bcf62b ...</pre>
-         <pre class="wirelog_rx_frame">116 RX FRAME : OPCODE=0, FIN=False, RSV=0, PAYLOAD-LEN=4082, MASKED=True, MASK=3533393664633031</pre>
+         <pre class="wirelog_rx_frame">115 RX FRAME : OPCODE=0, FIN=False, RSV=0, PAYLOAD-LEN=4082, MASKED=True, MASK=3533393664633031</pre>
          <pre class="wirelog_rx_frame">               **************************************************************** ...</pre>
-         <pre class="wirelog_rx_frame">117 RX FRAME : OPCODE=0, FIN=False, RSV=0, PAYLOAD-LEN=4082, MASKED=True, MASK=3036313965616638</pre>
+         <pre class="wirelog_rx_frame">116 RX FRAME : OPCODE=0, FIN=False, RSV=0, PAYLOAD-LEN=4082, MASKED=True, MASK=3036313965616638</pre>
          <pre class="wirelog_rx_frame">               **************************************************************** ...</pre>
+         <pre class="wirelog_rx_octets">117 RX OCTETS: a7abc0e6a7abc0e6a7abc0e6a7abc0e6a7abc0e6a7abc0e6a7abc0e6a7abc0e6a7abc0e6a7abc0e6a7abc0e6a7abc0e6a7ab</pre>
+         <pre class="wirelog_rx_octets">               c0e6a7abc0e6a7abc0e6a7abc0e6 ...</pre>
          <pre class="wirelog_rx_frame">118 RX FRAME : OPCODE=0, FIN=False, RSV=0, PAYLOAD-LEN=4082, MASKED=True, MASK=3864383165616363</pre>
          <pre class="wirelog_rx_frame">               **************************************************************** ...</pre>
          <pre class="wirelog_rx_frame">119 RX FRAME : OPCODE=0, FIN=False, RSV=0, PAYLOAD-LEN=4082, MASKED=True, MASK=3837303739393134</pre>

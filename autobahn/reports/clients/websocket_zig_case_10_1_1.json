@@ -8,7 +8,7 @@
    "createWirelog": true,
    "description": "Send text message with payload of length 65536 auto-fragmented with <b>autoFragmentSize = 1300</b>.",
    "droppedByMe": true,
-   "duration": 10,
+   "duration": 8,
    "expectation": "Receive echo'ed text message (with payload as sent and transmitted frame counts as expected). Clean close with normal code.",
    "expected": {
       "OK": [
@@ -54,11 +54,11 @@
    "rxOctetStats": {
       "8": 1,
       "277": 1,
-      "14480": 1,
-      "18288": 1,
-      "32904": 1
+      "13972": 1,
+      "22740": 1,
+      "28960": 1
    },
-   "started": "2023-01-03T07:15:29.647Z",
+   "started": "2023-01-03T19:55:55.174Z",
    "trafficStats": null,
    "txFrameStats": {
       "0": 50,
@@ -1221,7 +1221,7 @@
       [
          "RO",
          [
-            14480,
+            13972,
             "01fe0ff2bbad6ba29187418891874188918741889187418891874188918741889187418891874188918741889187418891874188918741889187418891874188 ..."
          ]
       ],
@@ -1264,7 +1264,7 @@
       [
          "RO",
          [
-            18288,
+            28960,
             "557e18c3557e18c3557e18c3557e18c3557e18c3557e18c3557e18c3557e18c3557e18c3557e18c3557e18c3557e18c3557e18c3557e18c3557e18c3557e18c3 ..."
          ]
       ],
@@ -1329,13 +1329,6 @@
          "48db5015"
       ],
       [
-         "RO",
-         [
-            32904,
-            "79bcf62b79bcf62b79bcf62b79bcf62b79bcf62b79bcf62b79bcf62b79bcf62b79bcf62b79bcf62b79bcf62b79bcf62b79bcf62b79bcf62b79bcf62b79bcf62b ..."
-         ]
-      ],
-      [
          "RF",
          [
             4082,
@@ -1358,6 +1351,13 @@
          0,
          true,
          "0619eaf8"
+      ],
+      [
+         "RO",
+         [
+            22740,
+            "a7abc0e6a7abc0e6a7abc0e6a7abc0e6a7abc0e6a7abc0e6a7abc0e6a7abc0e6a7abc0e6a7abc0e6a7abc0e6a7abc0e6a7abc0e6a7abc0e6a7abc0e6a7abc0e6 ..."
+         ]
       ],
       [
          "RF",

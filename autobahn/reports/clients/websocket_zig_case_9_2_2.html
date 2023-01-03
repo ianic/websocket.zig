@@ -202,7 +202,7 @@ pre.wirelog_tcp_closed_by_peer {color: #fff; margin: 0; background-color: #000; 
       <center><a href="http://autobahn.ws/testsuite" title="Autobahn WebSocket Testsuite"><img src="http://autobahn.ws/static/img/ws_protocol_test_report.png"          border="0" width="820" height="46" alt="Autobahn WebSocket Testsuite Report"></img></a></center>
       <center><a href="http://autobahn.ws"           title="Autobahn WebSocket">          <img src="http://autobahn.ws/static/img/ws_protocol_test_report_autobahn.png" border="0" width="300" height="68" alt="Autobahn WebSocket">                 </img></a></center>
       <br/>
-      <p class="case case_ok">websocket.zig - <span style="font-size: 1.3em;"><b>Case 9.2.2</b></span> : Pass - <span style="font-size: 0.9em;"><b>21</b> ms @ 2023-01-03T07:15:12.807Z</a></p>
+      <p class="case case_ok">websocket.zig - <span style="font-size: 1.3em;"><b>Case 9.2.2</b></span> : Pass - <span style="font-size: 0.9em;"><b>22</b> ms @ 2023-01-03T19:55:37.785Z</a></p>
       <p class="case_text_block case_desc"><b>Case Description</b><br/><br/>Send binary message message with payload of length 256 * 2**10 (256k).</p>
       <p class="case_text_block case_expect"><b>Case Expectation</b><br/><br/>Receive echo'ed binary message (with payload as sent).</p>
 
@@ -251,16 +251,15 @@ Sec-WebSocket-Accept: XGV58yCGiJW9tr+f7Uv82xnDgvE=</pre>
          <tr class="stats_header"><td>Chop Size</td><td>Count</td><td>Octets</td></tr>
          <tr class="stats_row"><td>8</td><td>1</td><td>8</td></tr>
          <tr class="stats_row"><td>277</td><td>1</td><td>277</td></tr>
-         <tr class="stats_row"><td>8304</td><td>1</td><td>8304</td></tr>
-         <tr class="stats_row"><td>12270</td><td>1</td><td>12270</td></tr>
-         <tr class="stats_row"><td>13032</td><td>1</td><td>13032</td></tr>
-         <tr class="stats_row"><td>15598</td><td>1</td><td>15598</td></tr>
-         <tr class="stats_row"><td>24359</td><td>1</td><td>24359</td></tr>
-         <tr class="stats_row"><td>24464</td><td>1</td><td>24464</td></tr>
-         <tr class="stats_row"><td>24693</td><td>1</td><td>24693</td></tr>
+         <tr class="stats_row"><td>5970</td><td>1</td><td>5970</td></tr>
+         <tr class="stats_row"><td>12089</td><td>1</td><td>12089</td></tr>
+         <tr class="stats_row"><td>12886</td><td>1</td><td>12886</td></tr>
+         <tr class="stats_row"><td>14480</td><td>1</td><td>14480</td></tr>
+         <tr class="stats_row"><td>20679</td><td>1</td><td>20679</td></tr>
+         <tr class="stats_row"><td>32720</td><td>1</td><td>32720</td></tr>
          <tr class="stats_row"><td>32768</td><td>3</td><td>98304</td></tr>
-         <tr class="stats_row"><td>41640</td><td>1</td><td>41640</td></tr>
-         <tr class="stats_total"><td>Total</td><td>13</td><td>262949</td></tr>
+         <tr class="stats_row"><td>65536</td><td>1</td><td>65536</td></tr>
+         <tr class="stats_total"><td>Total</td><td>12</td><td>262949</td></tr>
       </table>
       <h3>Octets Transmitted by Chop Size</h3>
       <table>

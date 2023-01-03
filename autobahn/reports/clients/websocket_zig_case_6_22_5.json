@@ -8,7 +8,7 @@
    "createWirelog": true,
    "description": "Send a text message with payload which is valid UTF-8 in one fragment.<br><br>Payload: 0xf0afbfbe",
    "droppedByMe": true,
-   "duration": 4,
+   "duration": 2,
    "expectation": "The message is echo'ed back to us.",
    "expected": {
       "OK": [
@@ -55,7 +55,7 @@
       "10": 1,
       "277": 1
    },
-   "started": "2023-01-03T07:15:10.749Z",
+   "started": "2023-01-03T19:55:35.783Z",
    "trafficStats": null,
    "txFrameStats": {
       "1": 1,
