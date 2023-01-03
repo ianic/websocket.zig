@@ -579,7 +579,7 @@ test "deflate compress/decompress" {
     var decomp = try std.compress.deflate.decompressor(allocator, decompressor_stm.reader(), null);
     defer decomp.deinit();
 
-    var decompressed = try decomp.reader().readAllAlloc(allocator, math.maxInt(usize));
+    var decompressed = try decomp.reader().readAllAlloc(allocator, std.math.maxInt(usize));
     defer allocator.free(decompressed);
     try testing.expectEqual(input.len, decompressed.len);
     try testing.expectEqualSlices(u8, input, decompressed);
@@ -602,16 +602,4 @@ test "zlib compress/decompress" {
     var decompressed = try dcmp.decompressAllAlloc(compressed);
     defer allocator.free(decompressed);
     try testing.expectEqualSlices(u8, input, decompressed);
-}
-
-const deflate = std.compress.deflate;
-const math = std.math;
-
-test "alloc/free" {
-    const allocator = std.testing.allocator;
-    var buf = try allocator.alloc(u8, 1024);
-    var buf2 = buf[0..1];
-    std.debug.print("koliko ce ovaj sada osloboditi\n", .{});
-    allocator.free(buf2);
-    //allocator.free(buf[1020..1024]);
 }
