@@ -31,11 +31,11 @@ pub const Message = struct {
         return self;
     }
 
-    pub fn deinit(self: *Self) void {
+    pub fn deinit(self: Self) void {
         if (self.allocator) |a| a.free(self.payload);
     }
 
-    fn validate(self: *Self) !void {
+    fn validate(self: Self) !void {
         if (self.encoding == .text)
             try Frame.assertValidUtf8(self.payload);
     }
@@ -187,6 +187,8 @@ pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
         }
 
         pub fn deinit(self: *Self) void {
+            if (self.compressor) |*cmp| cmp.deinit();
+            if (self.decompressor) |*dcmp| dcmp.deinit();
             self.writer.deinit();
         }
     };
