@@ -13,6 +13,10 @@ pub const Message = struct {
     pub const Encoding = enum {
         text,
         binary,
+
+        pub fn opcode(self: Encoding) Frame.Opcode {
+            return if (self == .text) Frame.Opcode.text else Frame.Opcode.binary;
+        }
     };
 
     encoding: Encoding = .text,
@@ -71,8 +75,8 @@ pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
         err: ?anyerror = null,
 
         last_frame_fragment: Frame.Fragment = .unfragmented,
-        decompressor: ?zlib.BufferDecompressor = null,
-        compressor: ?zlib.BufferCompressor = null,
+        decompressor: ?zlib.Decompressor = null,
+        compressor: ?zlib.Compressor = null,
         options: Options = .{},
 
         const Self = @This();
@@ -145,45 +149,73 @@ pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
         }
 
         pub fn sendMessage(self: *Self, msg: Message) !void {
-            if (msg.payload.len >= self.options.compress_threshold) {
-                if (self.compressor) |*cmp| {
-                    // send compressed
-                    const payload = try cmp.compressAllAlloc(msg.payload);
-                    defer self.allocator.free(payload);
-                    if (self.options.client_no_context_takeover) try cmp.reset();
-                    try self.writer.compressedMessage(Message{ .encoding = msg.encoding, .payload = payload[0 .. payload.len - 4] });
-                    return;
-                }
-            }
-            try self.writer.message(msg);
+            try self.send(.{ .encoding = msg.encoding, .payload = msg.payload });
         }
 
         const SendOptions = struct {
-            encoding: Message.Encoding = .text,
-            compress: bool = true,
+            encoding: Message.Encoding = .binary,
+            payload: ?[]const u8 = null,
+
+            // if we already have payload in ws compression format
+            // deflated without header and footer
+            // usefull if we are sending same message to multiple destinations
+            compressed_payload: ?[]const u8 = null,
+
+            // prevent payload compression
+            // usefull if payload is of already compressed type, for example jpg
+            no_compress: bool = false,
         };
 
-        pub fn send(self: *Self, payload: []const u8, options: SendOptions) !void {
-            const msg = Message{ .encoding = .encoding, .payload = payload };
-            if (options.compress)
-                try self.sendMessage(msg)
-            else
-                try self.writer.message(msg);
+        pub fn send(self: *Self, opt: SendOptions) !void {
+            if (opt.payload == null and opt.compressed_payload == null) return;
+            if (opt.compressed_payload) |compressed| {
+                if (self.options.per_message_deflate) {
+                    try self.writer.message(opt.encoding, compressed, true);
+                    return;
+                }
+            }
+            if (opt.payload) |payload| {
+                if (!opt.no_compress and payload.len >= self.options.compress_threshold) {
+                    if (self.compressor) |*cmp| {
+                        // send compressed
+                        const compressed = try cmp.compressAllAlloc(payload);
+                        defer self.allocator.free(compressed);
+                        if (self.options.client_no_context_takeover) try cmp.reset();
+                        try self.writer.message(opt.encoding, compressed[0 .. compressed.len - deflate_tail.len], true);
+                        return;
+                    }
+                }
+                try self.writer.message(opt.encoding, payload, false);
+                return;
+            }
+            return error.DeflateNotSupported; // only compressed_payload is set but per_message_deflate not supported
+        }
+
+        // compress payload into websocket format
+        // can be used in send
+        // caller owns returned memory
+        fn compress(self: Self, payload: []const u8) ![]const u8 {
+            if (self.compressor) |*cmp| {
+                const compressed = try cmp.compressAllAlloc(payload);
+                return self.allocator.realloc(compressed, compressed.len - deflate_tail.len);
+            }
+            return error.DeflateNotSupported;
         }
 
         fn initMessage(self: *Self, encoding: Message.Encoding, payload: []const u8) !Message {
             return Message.init(self.allocator, encoding, payload);
         }
 
+        const deflate_tail = [_]u8{ 0x0, 0x0, 0xff, 0xff };
+
         fn initCompressedMessage(self: *Self, encoding: Message.Encoding, compressed: *std.ArrayList(u8)) !Message {
             if (self.decompressor) |*dcmp| {
-                try compressed.appendSlice(&[_]u8{ 0x0, 0x0, 0xff, 0xff });
-
+                try compressed.appendSlice(&deflate_tail);
                 const decompressed = try dcmp.decompressAllAlloc(compressed.items);
                 if (self.options.server_no_context_takeover) try dcmp.reset();
                 return Message.init(self.allocator, encoding, decompressed);
             }
-            unreachable;
+            return error.DeflateNotSupported;
         }
 
         pub fn deinit(self: *Self) void {
@@ -302,15 +334,7 @@ pub fn Writer(comptime WriterType: type) type {
             try self.writer.writeAll(self.buf[0..bytes]);
         }
 
-        pub fn compressedMessage(self: *Self, msg: Message) !void {
-            try self.message_(msg, true);
-        }
-
-        pub fn message(self: *Self, msg: Message) !void {
-            try self.message_(msg, false);
-        }
-
-        fn message_(self: *Self, msg: Message, compressed: bool) !void {
+        pub fn message(self: *Self, encoding: Message.Encoding, payload: []const u8, compressed: bool) !void {
             var sent_payload: usize = 0;
             // send multiple frames if needed
             while (true) {
@@ -320,15 +344,12 @@ pub fn Writer(comptime WriterType: type) type {
                 var rsv1: u1 = if (compressed and first_frame) 1 else 0;
 
                 // use frame payload that fits into write_buf
-                var frame_payload = msg.payload[sent_payload..];
+                var frame_payload = payload[sent_payload..];
                 if (frame_payload.len + Frame.max_header > self.buf.len) {
                     frame_payload = frame_payload[0 .. self.buf.len - Frame.max_header];
                     fin = 0;
                 }
-                const opcode = if (first_frame) // set opcode for the first frame
-                    if (msg.encoding == .text) Frame.Opcode.text else Frame.Opcode.binary
-                else
-                    Frame.Opcode.continuation; // for all other frames
+                const opcode = if (first_frame) encoding.opcode() else Frame.Opcode.continuation;
 
                 // create frame
                 const frame = Frame{ .fin = fin, .rsv1 = rsv1, .opcode = opcode, .payload = frame_payload, .mask = 1 };
@@ -337,18 +358,10 @@ pub fn Writer(comptime WriterType: type) type {
                 try self.writer.writeAll(self.buf[0..bytes]);
                 // loop if something is left
                 sent_payload += frame_payload.len;
-                if (sent_payload >= msg.payload.len) {
+                if (sent_payload >= payload.len) {
                     break;
                 }
             }
-        }
-
-        pub fn text(self: *Self, payload: []const u8) !void {
-            try self.message(Message{ .encoding = .text, .payload = payload });
-        }
-
-        pub fn binary(self: *Self, payload: []const u8) !void {
-            try self.message(Message{ .encoding = .binary, .payload = payload });
         }
 
         pub fn deinit(self: *Self) void {
@@ -378,11 +391,11 @@ pub fn client(
         .writer = try writer(allocator, inner_writer),
         .options = options,
         .decompressor = if (options.per_message_deflate)
-            try zlib.BufferDecompressor.init(allocator, .{ .header = .none, .window_size = options.server_max_window_bits })
+            try zlib.Decompressor.init(allocator, .{ .header = .none, .window_size = options.server_max_window_bits })
         else
             null,
         .compressor = if (options.per_message_deflate)
-            try zlib.BufferCompressor.init(allocator, .{ .header = .none, .window_size = options.client_max_window_bits })
+            try zlib.Compressor.init(allocator, .{ .header = .none, .window_size = options.client_max_window_bits })
         else
             null,
     };
@@ -532,7 +545,7 @@ test "writer message" {
     var w = try writer(testing.allocator, writer_stm.writer());
     defer w.deinit();
     const payload = "hello world";
-    try w.text(payload);
+    try w.message(.text, payload, false);
 
     try expectEqual(writer_stm.pos, 17); // pong header (2 bytes) + mask (4 bytes) +  payload (11 bytes)
     try testing.expectEqualSlices(u8, output[0..2], &[_]u8{ 0x81, 0x8B });
@@ -560,6 +573,7 @@ test "deflate compress/decompress" {
     try comp.close();
     var compressed = compressor_stm.items;
     //showBuf(compressed);
+    try testing.expectEqualSlices(u8, compressed, &[_]u8{ 0xf2, 0x48, 0xcd, 0xc9, 0xc9, 0x07, 0x04, 0x00, 0x00, 0xff, 0xff });
 
     var decompressor_stm = io.fixedBufferStream(compressed);
     var decomp = try std.compress.deflate.decompressor(allocator, decompressor_stm.reader(), null);
@@ -571,5 +585,33 @@ test "deflate compress/decompress" {
     try testing.expectEqualSlices(u8, input, decompressed);
 }
 
+test "zlib compress/decompress" {
+    const allocator = testing.allocator;
+    const input = "Hello";
+
+    var cmp = try zlib.Compressor.init(allocator, .{ .header = .none });
+    defer cmp.deinit();
+
+    var compressed = try cmp.compressAllAlloc(input);
+    defer allocator.free(compressed);
+    //showBuf(compressed);
+
+    var dcmp = try zlib.Decompressor.init(allocator, .{ .header = .none });
+    defer dcmp.deinit();
+
+    var decompressed = try dcmp.decompressAllAlloc(compressed);
+    defer allocator.free(decompressed);
+    try testing.expectEqualSlices(u8, input, decompressed);
+}
+
 const deflate = std.compress.deflate;
 const math = std.math;
+
+test "alloc/free" {
+    const allocator = std.testing.allocator;
+    var buf = try allocator.alloc(u8, 1024);
+    var buf2 = buf[0..1];
+    std.debug.print("koliko ce ovaj sada osloboditi\n", .{});
+    allocator.free(buf2);
+    //allocator.free(buf[1020..1024]);
+}

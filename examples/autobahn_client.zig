@@ -18,35 +18,43 @@ pub fn main() !void {
 
     var case_no: usize = 1;
     while (case_no <= cases_count) : (case_no += 1) {
-        //std.debug.print("running case no: {d}\n", .{case_no});
+        const start = std.time.milliTimestamp();
+
         try runTestCase(allocator, case_no);
+        const durationMs = std.time.milliTimestamp() - start;
+        if (durationMs > 100) {
+            std.debug.print("{d}/{d} {d}ms\n", .{ case_no, cases_count, durationMs });
+        }
     }
     std.debug.print("\n", .{});
 }
 
 fn runTestCase(allocator: Allocator, no: usize) !void {
     var path_buf: [128]u8 = undefined;
-    const path = try std.fmt.bufPrint(&path_buf, "/runCase?case={d}&agent=websocket_test.zig", .{no});
+    const hostname = "localhost";
+    const port = 9001;
+    const uri = try std.fmt.bufPrint(&path_buf, "ws://{s}:{d}/runCase?case={d}&agent=websocket.zig", .{ hostname, port, no });
 
-    var tcp_stm = try std.net.tcpConnectToHost(allocator, "127.0.0.1", 9001);
-    var stm = try ws.client(
+    var tcp_stm = try std.net.tcpConnectToHost(allocator, hostname, port);
+    var cli = try ws.client(
         allocator,
         tcp_stm.reader(),
         tcp_stm.writer(),
-        "127.0.0.1:9001",
-        path,
+        hostname,
+        uri,
     );
-    defer stm.deinit();
+    defer cli.deinit();
     defer tcp_stm.close();
 
     // echo loop read and send message
-    while (stm.nextMessage()) |msg| {
-        try stm.sendMessage(msg);
+    while (cli.nextMessage()) |msg| {
+        try cli.sendMessage(msg);
+        msg.deinit();
     }
-    if (stm.err) |_| {
-        std.debug.print("e", .{});
-        //std.log.err("case: {d} {}", .{ no, err });
+    if (cli.err) |err| {
+        //std.debug.print("e", .{});
+        std.log.err("case: {d} {}", .{ no, err });
     } else {
-        std.debug.print(".", .{});
+        //std.debug.print(".", .{});
     }
 }

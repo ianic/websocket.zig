@@ -9,9 +9,9 @@ pub fn client(
     inner_reader: anytype,
     inner_writer: anytype,
     host: []const u8,
-    path: []const u8,
+    uri: []const u8,
 ) !stream.Stream(@TypeOf(inner_reader), @TypeOf(inner_writer)) {
-    const options = try handshake.client(allocator, inner_reader, inner_writer, host, path);
+    const options = try handshake.client(allocator, inner_reader, inner_writer, host, uri);
     return try stream.client(allocator, inner_reader, inner_writer, options);
 }
 

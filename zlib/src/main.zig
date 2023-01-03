@@ -37,6 +37,11 @@ pub fn errorFromInt(val: c_int) Error {
     };
 }
 
+pub fn checkRC(val: c_int) Error!void {
+    if (val == c.Z_OK) return;
+    return errorFromInt(val);
+}
+
 // method is copied from pfg's https://gist.github.com/pfgithub/65c13d7dc889a4b2ba25131994be0d20
 // we have a header for each allocation that records the length, which we need
 // for the allocator. Assuming that there aren't many small allocations this is
@@ -87,12 +92,12 @@ fn zfree(private: ?*anyopaque, addr: ?*anyopaque) callconv(.C) void {
     allocator.free(buf);
 }
 
-pub fn compressor(allocator: Allocator, writer: anytype, options: CompressorOptions) Error!Compressor(@TypeOf(writer)) {
-    return Compressor(@TypeOf(writer)).init(allocator, writer, options);
+pub fn compressorWriter(allocator: Allocator, writer: anytype, options: CompressorOptions) Error!CompressorWriter(@TypeOf(writer)) {
+    return CompressorWriter(@TypeOf(writer)).init(allocator, writer, options);
 }
 
-pub fn decompressor(allocator: Allocator, writer: anytype, options: DecompressorOptions) Error!Decompressor(@TypeOf(writer)) {
-    return Decompressor(@TypeOf(writer)).init(allocator, writer, options);
+pub fn decompressorReader(allocator: Allocator, writer: anytype, options: DecompressorOptions) Error!DecompressorReader(@TypeOf(writer)) {
+    return DecompressorReader(@TypeOf(writer)).init(allocator, writer, options);
 }
 
 fn zStreamInit(allocator: Allocator) !*c.z_stream {
@@ -141,7 +146,7 @@ pub const CompressorOptions = struct {
     }
 };
 
-pub fn Compressor(comptime WriterType: type) type {
+pub fn CompressorWriter(comptime WriterType: type) type {
     return struct {
         allocator: Allocator,
         stream: *c.z_stream,
@@ -242,7 +247,7 @@ pub const DecompressorOptions = struct {
     }
 };
 
-pub fn Decompressor(comptime ReaderType: type) type {
+pub fn DecompressorReader(comptime ReaderType: type) type {
     return struct {
         allocator: Allocator,
         stream: *c.z_stream,
@@ -307,7 +312,7 @@ pub fn Decompressor(comptime ReaderType: type) type {
     };
 }
 
-pub const BufferCompressor = struct {
+pub const Compressor = struct {
     allocator: Allocator,
     stream: *c.z_stream,
 
@@ -316,16 +321,14 @@ pub const BufferCompressor = struct {
     pub fn init(allocator: Allocator, options: CompressorOptions) !Self {
         var stream = try zStreamInit(allocator);
         errdefer zStreamDeinit(allocator, stream);
-
-        const rc = c.deflateInit2(
+        try checkRC(c.deflateInit2(
             stream,
             c.Z_DEFAULT_COMPRESSION,
             c.Z_DEFLATED, // only option
             options.windowSize(),
             8, // memLevel
             c.Z_DEFAULT_STRATEGY,
-        );
-        if (rc != c.Z_OK) return errorFromInt(rc);
+        ));
         return .{ .allocator = allocator, .stream = stream };
     }
 
@@ -335,38 +338,42 @@ pub const BufferCompressor = struct {
     }
 
     pub fn reset(self: *Self) !void {
-        const rc = c.deflateReset(self.stream);
-        if (rc != c.Z_OK) return errorFromInt(rc);
+        try checkRC(c.deflateReset(self.stream));
     }
 
     pub fn compressAllAlloc(self: *Self, uncompressed: []const u8) ![]u8 {
         self.stream.next_in = @intToPtr([*]u8, @ptrToInt(uncompressed.ptr));
         self.stream.avail_in = @intCast(c_uint, uncompressed.len);
 
-        var compressed_list = std.ArrayList(u8).init(self.allocator);
-        while (true) {
-            const unused = @max(compressed_list.capacity, uncompressed.len / expected_ratio);
-            try compressed_list.ensureUnusedCapacity(unused);
-            var tmp = compressed_list.unusedCapacitySlice();
-            self.stream.next_out = @intToPtr([*]u8, @ptrToInt(tmp.ptr));
-            self.stream.avail_out = @intCast(c_uint, tmp.len);
+        var tmp = try self.allocator.alloc(u8, chunk_size);
+        var len: usize = 0; // used part of the tmp buffer
 
-            var rc = c.deflate(self.stream, c.Z_SYNC_FLUSH);
+        var flag = c.Z_PARTIAL_FLUSH;
+        while (true) {
+            var out = tmp[len..];
+            self.stream.next_out = @intToPtr([*]u8, @ptrToInt(out.ptr));
+            self.stream.avail_out = @intCast(c_uint, out.len);
+
+            var rc = c.deflate(self.stream, flag);
             if (rc != c.Z_OK and rc != c.Z_STREAM_END)
                 return errorFromInt(rc);
 
-            if (self.stream.avail_out == 0) {
-                compressed_list.items.len += tmp.len;
+            len += out.len - self.stream.avail_out;
+            if (self.stream.avail_out == 0) { // out is full
+                tmp = try self.allocator.realloc(tmp, tmp.len * 2);
                 continue;
             }
-            const n = tmp.len - self.stream.avail_out;
-            compressed_list.items.len += n;
-            return try compressed_list.toOwnedSlice();
+
+            if (flag == c.Z_SYNC_FLUSH) break;
+            flag = c.Z_SYNC_FLUSH;
         }
+        return try self.allocator.realloc(tmp, len);
     }
 };
 
-pub const BufferDecompressor = struct {
+const chunk_size = 4096;
+
+pub const Decompressor = struct {
     allocator: Allocator,
     stream: *c.z_stream,
 
@@ -375,10 +382,7 @@ pub const BufferDecompressor = struct {
     pub fn init(allocator: Allocator, options: DecompressorOptions) !Self {
         var stream = try zStreamInit(allocator);
         errdefer zStreamDeinit(allocator, stream);
-
-        const rc = c.inflateInit2(stream, options.windowSize());
-        if (rc != c.Z_OK) return errorFromInt(rc);
-
+        try checkRC(c.inflateInit2(stream, options.windowSize()));
         return .{ .allocator = allocator, .stream = stream };
     }
 
@@ -388,41 +392,34 @@ pub const BufferDecompressor = struct {
     }
 
     pub fn reset(self: *Self) !void {
-        const rc = c.inflateReset(self.stream);
-        if (rc != c.Z_OK) return errorFromInt(rc);
+        try checkRC(c.inflateReset(self.stream));
     }
 
     pub fn decompressAllAlloc(self: *Self, compressed: []const u8) ![]u8 {
         self.stream.next_in = @intToPtr([*]u8, @ptrToInt(compressed.ptr));
         self.stream.avail_in = @intCast(c_uint, compressed.len);
 
-        var decompressed_list = std.ArrayList(u8).init(self.allocator);
-        defer decompressed_list.deinit();
+        var tmp = try self.allocator.alloc(u8, chunk_size);
+        var len: usize = 0; // inflated part of the tmp buffer
         while (true) {
-            const unused = @max(decompressed_list.capacity, compressed.len * 4);
-            try decompressed_list.ensureUnusedCapacity(unused);
-            var tmp = decompressed_list.unusedCapacitySlice();
-            self.stream.next_out = @intToPtr([*]u8, @ptrToInt(tmp.ptr));
-            self.stream.avail_out = @intCast(c_uint, tmp.len);
+            var out = tmp[len..];
+            self.stream.next_out = @intToPtr([*]u8, @ptrToInt(out.ptr));
+            self.stream.avail_out = @intCast(c_uint, out.len);
 
             var rc = c.inflate(self.stream, c.Z_SYNC_FLUSH);
-            if (rc != c.Z_OK and rc != c.Z_STREAM_END)
+            if (rc != c.Z_OK and rc != c.Z_STREAM_END) {
                 return errorFromInt(rc);
-
-            if (self.stream.avail_out == 0) {
-                decompressed_list.items.len += tmp.len;
+            }
+            len += out.len - self.stream.avail_out;
+            if (self.stream.avail_in != 0 and self.stream.avail_out == 0) { // in not empty, out full
+                tmp = try self.allocator.realloc(tmp, tmp.len * 2); // make more space
                 continue;
             }
-            const n = tmp.len - self.stream.avail_out;
-            decompressed_list.items.len += n;
-            return try decompressed_list.toOwnedSlice();
+            break;
         }
+        return try self.allocator.realloc(tmp, len);
     }
 };
-
-// for extending allocated buffers
-// assumed ratio between uncompressed and compressed buffers
-const expected_ratio = 4;
 
 test "compress gzip with zig interface" {
     const allocator = std.testing.allocator;
@@ -431,7 +428,7 @@ test "compress gzip with zig interface" {
 
     // compress with zlib
     const input = @embedFile("rfc1951.txt");
-    var cmp = try compressor(allocator, fifo.writer(), .{ .header = .gzip });
+    var cmp = try compressorWriter(allocator, fifo.writer(), .{ .header = .gzip });
     defer cmp.deinit();
     const writer = cmp.writer();
     try writer.writeAll(input);
@@ -453,14 +450,14 @@ test "compress/decompress" {
 
     // compress
     const input = @embedFile("rfc1951.txt");
-    var cmp = try compressor(allocator, fifo.writer(), .{});
+    var cmp = try compressorWriter(allocator, fifo.writer(), .{});
     defer cmp.deinit();
     const writer = cmp.writer();
     try writer.writeAll(input);
     try cmp.flush();
 
     // decompress
-    var dcmp = try decompressor(allocator, fifo.reader(), .{});
+    var dcmp = try decompressorReader(allocator, fifo.reader(), .{});
     defer dcmp.deinit();
     const actual = try dcmp.reader().readAllAlloc(allocator, std.math.maxInt(usize));
     defer allocator.free(actual);
@@ -472,12 +469,12 @@ test "buffer compress/decompress" {
     const allocator = std.testing.allocator;
 
     const input = @embedFile("rfc1951.txt");
-    var cmp = try BufferCompressor.init(allocator, .{ .header = .none });
+    var cmp = try Compressor.init(allocator, .{ .header = .none });
     defer cmp.deinit();
     const compressed = try cmp.compressAllAlloc(input);
     defer allocator.free(compressed);
 
-    var dcmp = try BufferDecompressor.init(allocator, .{ .header = .none });
+    var dcmp = try Decompressor.init(allocator, .{ .header = .none });
     defer dcmp.deinit();
     const decompressed = try dcmp.decompressAllAlloc(compressed);
     defer allocator.free(decompressed);
@@ -501,4 +498,12 @@ test "compress gzip with C interface" {
     _ = c.deflateInit2(&zs, c.Z_DEFAULT_COMPRESSION, c.Z_DEFLATED, 15 | 16, 8, c.Z_DEFAULT_STRATEGY);
     _ = c.deflate(&zs, c.Z_FINISH);
     _ = c.deflateEnd(&zs);
+}
+
+// debug helper
+fn showBuf(buf: []const u8) void {
+    std.debug.print("\n", .{});
+    for (buf) |b|
+        std.debug.print("0x{x:0>2}, ", .{b});
+    std.debug.print("\n", .{});
 }

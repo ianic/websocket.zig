@@ -1,3 +1,9 @@
+### 
+
+* passing all autobahn tests
+* handles per message deflate, including sliding window bits size negotiation
+* uses zlib for message compression/decompression
+
 ### References
 
 
@@ -9,5 +15,6 @@
 [zlib](https://www.zlib.net/manual.html#Advanced)
 
 <!--
+https://bugs.chromium.org/p/chromium/issues/detail?id=691074
 https://www.igvita.com/2013/11/27/configuring-and-optimizing-websocket-compression/#parameters
 -->

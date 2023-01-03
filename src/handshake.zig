@@ -87,17 +87,17 @@ pub fn Client(comptime ReaderType: type, comptime WriterType: type) type {
             self.arena.deinit();
         }
 
-        pub fn writeRequest(self: *Self, host: []const u8, path: []const u8) !void {
+        pub fn writeRequest(self: *Self, host: []const u8, uri: []const u8) !void {
             var buf: [1024]u8 = undefined;
-            const format = "GET ws://{s}{s} HTTP/1.1\r\nHost: {s}" ++ crlf ++
+            const format = "GET {s} HTTP/1.1" ++ crlf ++
+                "Host: {s}" ++ crlf ++
                 "Upgrade: websocket" ++ crlf ++
                 "Connection: Upgrade" ++ crlf ++
                 "Sec-WebSocket-Key: {s}" ++ crlf ++
                 "Sec-WebSocket-Version: 13" ++ crlf ++
-                //"Sec-WebSocket-Extensions: permessage-deflate;client_no_context_takeover;server_no_context_takeover" ++ crlf ++
                 "Sec-WebSocket-Extensions: permessage-deflate;client_max_window_bits" ++ crlf ++
                 crlf;
-            try self.writer.writeAll(try fmt.bufPrint(&buf, format, .{ host, path, host, self.sec_key }));
+            try self.writer.writeAll(try fmt.bufPrint(&buf, format, .{ uri, host, self.sec_key }));
         }
 
         pub fn assertValidResponse(self: *Self) !void {
@@ -228,10 +228,10 @@ fn clientInit(allocator: Allocator, reader: anytype, writer: anytype) Client(@Ty
 
 // do client handshake using stream
 // error on unsuccessful handshake
-pub fn client(allocator: Allocator, reader: anytype, writer: anytype, host: []const u8, path: []const u8) !Options {
+pub fn client(allocator: Allocator, reader: anytype, writer: anytype, host: []const u8, uri: []const u8) !Options {
     var cs = clientInit(allocator, reader, writer);
     defer cs.deinit();
-    try cs.writeRequest(host, path);
+    try cs.writeRequest(host, uri);
     try cs.assertValidResponse();
     return cs.options;
 }
@@ -279,7 +279,7 @@ test "valid ws handshake" {
         "Sec-WebSocket-Accept: 9bQuZIN64KrRsqgxuR1CxYN94zQ=\r\n\r\n";
 
     var stm = testing_stream.init(http_response);
-    _ = try client(testing.allocator, stm.reader(), stm.writer(), "ws.example.com", "/ws");
+    _ = try client(testing.allocator, stm.reader(), stm.writer(), "ws.example.com", "ws://ws.example.com/ws");
     try testing.expectEqualSlices(u8, stm.written(), &http_request.*);
 }
 
