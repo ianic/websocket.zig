@@ -8,7 +8,7 @@
    "createWirelog": true,
    "description": "Send text message with payload 0.",
    "droppedByMe": true,
-   "duration": 6,
+   "duration": 13,
    "expectation": "Receive echo'ed text message (with empty payload). Clean close with normal code.",
    "expected": {
       "OK": [
@@ -55,7 +55,7 @@
       "8": 1,
       "275": 1
    },
-   "started": "2022-12-31T17:01:56.675Z",
+   "started": "2023-01-03T07:14:59.763Z",
    "trafficStats": null,
    "txFrameStats": {
       "1": 1,

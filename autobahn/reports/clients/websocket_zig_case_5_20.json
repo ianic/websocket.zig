@@ -8,7 +8,7 @@
    "createWirelog": true,
    "description": "Same as Case 5.19, but send all frames with SYNC = True.\n   Note, this does not change the octets sent in any way, only how the stream\n   is chopped up on the wire.",
    "droppedByMe": true,
-   "duration": 1041,
+   "duration": 1026,
    "expectation": "Same as Case 5.19. Implementations must be agnostic to how\n   octet stream is chopped up on wire (must be TCP clean).",
    "expected": {
       "OK": [
@@ -73,7 +73,7 @@
       "66": 1,
       "276": 1
    },
-   "started": "2022-12-31T17:01:58.313Z",
+   "started": "2023-01-03T07:15:01.164Z",
    "trafficStats": null,
    "txFrameStats": {
       "0": 4,

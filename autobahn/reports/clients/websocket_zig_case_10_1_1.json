@@ -8,7 +8,7 @@
    "createWirelog": true,
    "description": "Send text message with payload of length 65536 auto-fragmented with <b>autoFragmentSize = 1300</b>.",
    "droppedByMe": true,
-   "duration": 17,
+   "duration": 10,
    "expectation": "Receive echo'ed text message (with payload as sent and transmitted frame counts as expected). Clean close with normal code.",
    "expected": {
       "OK": [
@@ -54,12 +54,11 @@
    "rxOctetStats": {
       "8": 1,
       "277": 1,
-      "413": 1,
-      "4090": 7,
-      "14731": 1,
-      "21898": 1
+      "14480": 1,
+      "18288": 1,
+      "32904": 1
    },
-   "started": "2022-12-31T17:02:29.456Z",
+   "started": "2023-01-03T07:15:29.647Z",
    "trafficStats": null,
    "txFrameStats": {
       "0": 50,
@@ -1222,7 +1221,7 @@
       [
          "RO",
          [
-            4090,
+            14480,
             "01fe0ff2bbad6ba29187418891874188918741889187418891874188918741889187418891874188918741889187418891874188918741889187418891874188 ..."
          ]
       ],
@@ -1239,13 +1238,6 @@
          "bbad6ba2"
       ],
       [
-         "RO",
-         [
-            4090,
-            "00fe0ff2f075e33eda5fc914da5fc914da5fc914da5fc914da5fc914da5fc914da5fc914da5fc914da5fc914da5fc914da5fc914da5fc914da5fc914da5fc914 ..."
-         ]
-      ],
-      [
          "RF",
          [
             4082,
@@ -1256,13 +1248,6 @@
          0,
          true,
          "f075e33e"
-      ],
-      [
-         "RO",
-         [
-            4090,
-            "00fe0ff2ff7426a6d55e0c8cd55e0c8cd55e0c8cd55e0c8cd55e0c8cd55e0c8cd55e0c8cd55e0c8cd55e0c8cd55e0c8cd55e0c8cd55e0c8cd55e0c8cd55e0c8c ..."
-         ]
       ],
       [
          "RF",
@@ -1279,8 +1264,8 @@
       [
          "RO",
          [
-            4090,
-            "00fe0ff232e97f5418c3557e18c3557e18c3557e18c3557e18c3557e18c3557e18c3557e18c3557e18c3557e18c3557e18c3557e18c3557e18c3557e18c3557e ..."
+            18288,
+            "557e18c3557e18c3557e18c3557e18c3557e18c3557e18c3557e18c3557e18c3557e18c3557e18c3557e18c3557e18c3557e18c3557e18c3557e18c3557e18c3 ..."
          ]
       ],
       [
@@ -1296,13 +1281,6 @@
          "32e97f54"
       ],
       [
-         "RO",
-         [
-            4090,
-            "00fe0ff2bf82988795a8b2ad95a8b2ad95a8b2ad95a8b2ad95a8b2ad95a8b2ad95a8b2ad95a8b2ad95a8b2ad95a8b2ad95a8b2ad95a8b2ad95a8b2ad95a8b2ad ..."
-         ]
-      ],
-      [
          "RF",
          [
             4082,
@@ -1313,13 +1291,6 @@
          0,
          true,
          "bf829887"
-      ],
-      [
-         "RO",
-         [
-            4090,
-            "00fe0ff29e6f61abb4454b81b4454b81b4454b81b4454b81b4454b81b4454b81b4454b81b4454b81b4454b81b4454b81b4454b81b4454b81b4454b81b4454b81 ..."
-         ]
       ],
       [
          "RF",
@@ -1334,13 +1305,6 @@
          "9e6f61ab"
       ],
       [
-         "RO",
-         [
-            4090,
-            "00fe0ff2f4d84311def2693bdef2693bdef2693bdef2693bdef2693bdef2693bdef2693bdef2693bdef2693bdef2693bdef2693bdef2693bdef2693bdef2693b ..."
-         ]
-      ],
-      [
          "RF",
          [
             4082,
@@ -1353,13 +1317,6 @@
          "f4d84311"
       ],
       [
-         "RO",
-         [
-            21898,
-            "00fe0ff248db501562f17a3f62f17a3f62f17a3f62f17a3f62f17a3f62f17a3f62f17a3f62f17a3f62f17a3f62f17a3f62f17a3f62f17a3f62f17a3f62f17a3f ..."
-         ]
-      ],
-      [
          "RF",
          [
             4082,
@@ -1370,6 +1327,13 @@
          0,
          true,
          "48db5015"
+      ],
+      [
+         "RO",
+         [
+            32904,
+            "79bcf62b79bcf62b79bcf62b79bcf62b79bcf62b79bcf62b79bcf62b79bcf62b79bcf62b79bcf62b79bcf62b79bcf62b79bcf62b79bcf62b79bcf62b79bcf62b ..."
+         ]
       ],
       [
          "RF",
@@ -1420,13 +1384,6 @@
          "87079914"
       ],
       [
-         "RO",
-         [
-            14731,
-            "f7ed25b7f7ed25b7f7ed25b7f7ed25b7f7ed25b7f7ed25b7f7ed25b7f7ed25b7f7ed25b7f7ed25b7f7ed25b7f7ed25b7f7ed25b7f7ed25b7f7ed25b7f7ed25b7 ..."
-         ]
-      ],
-      [
          "RF",
          [
             4082,
@@ -1461,13 +1418,6 @@
          0,
          true,
          "1066c44e"
-      ],
-      [
-         "RO",
-         [
-            413,
-            "e044e3dde044e3dde044e3dde044e3dde044e3dde044e3dde044e3dde044e3dde044e3dde044e3dde044e3dde044e3dde044e3dde044e3dde044e3dde044e3dd ..."
-         ]
       ],
       [
          "RF",

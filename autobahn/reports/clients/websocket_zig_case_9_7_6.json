@@ -8,7 +8,7 @@
    "createWirelog": true,
    "description": "Send 1000 text messages of payload size 4096 to measure implementation/network RTT (round trip time) / latency.",
    "droppedByMe": true,
-   "duration": 1295,
+   "duration": 1056,
    "expectation": "Receive echo'ed text messages (with payload as sent). Timeout case after 480 secs.",
    "expected": {},
    "expectedClose": {
@@ -39,12 +39,12 @@
    },
    "rxOctetStats": {
       "8": 1,
-      "20": 73,
+      "20": 70,
       "277": 1,
-      "4090": 73,
-      "4110": 927
+      "4090": 70,
+      "4110": 930
    },
-   "started": "2022-12-31T17:02:23.523Z",
+   "started": "2023-01-03T07:15:24.432Z",
    "trafficStats": null,
    "txFrameStats": {
       "1": 1000,

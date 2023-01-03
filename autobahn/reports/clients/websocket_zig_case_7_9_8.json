@@ -8,7 +8,7 @@
    "createWirelog": true,
    "description": "Send close with invalid close code 2000",
    "droppedByMe": false,
-   "duration": 3,
+   "duration": 1,
    "expectation": "Clean close with protocol error code or drop TCP",
    "expected": {
       "OK": []
@@ -38,7 +38,7 @@
    "rxOctetStats": {
       "277": 1
    },
-   "started": "2022-12-31T17:02:08.865Z",
+   "started": "2023-01-03T07:15:11.053Z",
    "trafficStats": null,
    "txFrameStats": {
       "8": 1

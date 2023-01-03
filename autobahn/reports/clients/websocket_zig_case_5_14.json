@@ -8,7 +8,7 @@
    "createWirelog": true,
    "description": "Send unfragmented Text Message after Continuation Frame with FIN = false, where there is nothing to continue, sent in octet-wise chops.",
    "droppedByMe": false,
-   "duration": 8,
+   "duration": 5,
    "expectation": "The connection is failed immediately, since there is no message to continue.",
    "expected": {
       "OK": []
@@ -38,7 +38,7 @@
    "rxOctetStats": {
       "276": 1
    },
-   "started": "2022-12-31T17:01:57.237Z",
+   "started": "2023-01-03T07:15:00.123Z",
    "trafficStats": null,
    "txFrameStats": {
       "0": 1,

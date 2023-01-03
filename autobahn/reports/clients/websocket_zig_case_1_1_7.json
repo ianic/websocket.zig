@@ -8,7 +8,7 @@
    "createWirelog": true,
    "description": "Send text message message with payload of length 65536.",
    "droppedByMe": true,
-   "duration": 10,
+   "duration": 9,
    "expectation": "Receive echo'ed text message (with payload as sent). Clean close with normal code.",
    "expected": {
       "OK": [
@@ -55,10 +55,10 @@
       "8": 1,
       "275": 1,
       "14480": 1,
-      "22768": 1,
-      "28424": 1
+      "18240": 1,
+      "32952": 1
    },
-   "started": "2022-12-31T17:01:56.739Z",
+   "started": "2023-01-03T07:14:59.829Z",
    "trafficStats": null,
    "txFrameStats": {
       "1": 1,
@@ -162,7 +162,7 @@
       [
          "RO",
          [
-            28424,
+            18240,
             "aa3a7a95aa3a7a95aa3a7a95aa3a7a95aa3a7a95aa3a7a95aa3a7a95aa3a7a95aa3a7a95aa3a7a95aa3a7a95aa3a7a95aa3a7a95aa3a7a95aa3a7a95aa3a7a95 ..."
          ]
       ],
@@ -227,6 +227,13 @@
          "41dec0ae"
       ],
       [
+         "RO",
+         [
+            32952,
+            "00fe0ff228e90ab502c3209f02c3209f02c3209f02c3209f02c3209f02c3209f02c3209f02c3209f02c3209f02c3209f02c3209f02c3209f02c3209f02c3209f ..."
+         ]
+      ],
+      [
          "RF",
          [
             4082,
@@ -249,13 +256,6 @@
          0,
          true,
          "dbd77218"
-      ],
-      [
-         "RO",
-         [
-            22768,
-            "63c6204e63c6204e63c6204e63c6204e63c6204e63c6204e63c6204e63c6204e63c6204e63c6204e63c6204e63c6204e63c6204e63c6204e63c6204e63c6204e ..."
-         ]
       ],
       [
          "RF",

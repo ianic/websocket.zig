@@ -8,7 +8,7 @@
    "createWirelog": true,
    "description": "Send text message after sending a close frame.",
    "droppedByMe": true,
-   "duration": 3,
+   "duration": 6,
    "expectation": "Clean close with normal code. Text message ignored.",
    "expected": {
       "OK": []
@@ -41,7 +41,7 @@
       "8": 1,
       "277": 1
    },
-   "started": "2022-12-31T17:02:08.629Z",
+   "started": "2023-01-03T07:15:10.941Z",
    "trafficStats": null,
    "txFrameStats": {
       "1": 1,

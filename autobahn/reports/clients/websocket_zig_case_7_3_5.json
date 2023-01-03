@@ -8,7 +8,7 @@
    "createWirelog": true,
    "description": "Send a close frame with close code and close reason of maximum length (123)",
    "droppedByMe": true,
-   "duration": 5,
+   "duration": 3,
    "expectation": "Clean close with normal code.",
    "expected": {
       "OK": []
@@ -41,7 +41,7 @@
       "131": 1,
       "277": 1
    },
-   "started": "2022-12-31T17:02:08.712Z",
+   "started": "2023-01-03T07:15:10.984Z",
    "trafficStats": null,
    "txFrameStats": {
       "8": 1

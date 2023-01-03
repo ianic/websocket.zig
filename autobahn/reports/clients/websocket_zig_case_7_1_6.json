@@ -8,7 +8,7 @@
    "createWirelog": true,
    "description": "Send 256K message followed by close then a ping",
    "droppedByMe": true,
-   "duration": 46,
+   "duration": 1003,
    "expectation": "Case outcome depends on implementation defined close behavior. Message and close frame are sent back to back. If the close frame is processed before the text message write is complete (as can happen in asynchronous processing models) the close frame is processed first and the text message may not be received or may only be partially recieved.",
    "expected": {
       "NON-STRICT": [],
@@ -34,37 +34,27 @@
    "isServer": true,
    "localCloseCode": 1000,
    "localCloseReason": null,
-   "received": [
-      [
-         "message",
-         "BAsd7&jh23BAsd7&jh23BAsd7&jh23BAsd7&jh23BAsd7&jh23BAsd7&jh23BAsd ...",
-         false
-      ],
-      [
-         "message",
-         "Hello World!",
-         false
-      ]
-   ],
-   "remoteCloseCode": 1000,
+   "received": [],
+   "remoteCloseCode": null,
    "remoteCloseReason": null,
    "reportCompressionRatio": false,
    "reportTime": false,
-   "result": "Actual events differ from any expected.",
-   "resultClose": "Connection was properly closed",
+   "result": "Close was processed before text message could be returned.",
+   "resultClose": "The spec requires the connection to be failed cleanly here",
    "rxFrameStats": {
-      "0": 64,
-      "1": 2,
-      "8": 1
+      "0": 63,
+      "1": 1
    },
    "rxOctetStats": {
       "277": 1,
-      "15928": 1,
-      "19746": 1,
-      "30408": 1,
-      "65536": 3
+      "14480": 1,
+      "28960": 1,
+      "32480": 1,
+      "58906": 1,
+      "61398": 1,
+      "65536": 1
    },
-   "started": "2022-12-31T17:02:08.644Z",
+   "started": "2023-01-03T07:15:10.953Z",
    "trafficStats": null,
    "txFrameStats": {
       "1": 2,
@@ -78,9 +68,9 @@
       "206": 1,
       "262154": 1
    },
-   "wasClean": true,
-   "wasCloseHandshakeTimeout": false,
-   "wasNotCleanReason": null,
+   "wasClean": false,
+   "wasCloseHandshakeTimeout": true,
+   "wasNotCleanReason": "peer did not respond (in time) in closing handshake",
    "wasOpenHandshakeTimeout": false,
    "wasServerConnectionDropTimeout": false,
    "wirelog": [
@@ -194,7 +184,7 @@
       [
          "RO",
          [
-            15928,
+            14480,
             "01fe0ff2a8619e4fea20ed2b9f47f4279a52dc0edb05a969c209ac7cea20ed2b9f47f4279a52dc0edb05a969c209ac7cea20ed2b9f47f4279a52dc0edb05a969 ..."
          ]
       ],
@@ -237,8 +227,8 @@
       [
          "RO",
          [
-            30408,
-            "2fdafe4b07f3bf1c7294a61077818e3936d6fb5e2fdafe4b07f3bf1c7294a61077818e3936d6fb5e2fdafe4b07f3bf1c7294a61077818e3936d6fb5e2fdafe4b ..."
+            28960,
+            "77818e3936d6fb5e2fdafe4b07f3bf1c7294a61077818e3936d6fb5e2fdafe4b07f3bf1c7294a61077818e3936d6fb5e2fdafe4b07f3bf1c7294a61077818e39 ..."
          ]
       ],
       [
@@ -326,6 +316,13 @@
          "a103c5cd"
       ],
       [
+         "RO",
+         [
+            58906,
+            "46ba785b5fb67d4e779f3c1902f8251507ed0d3c46ba785b5fb67d4e779f3c1902f8251507ed0d3c46ba785b5fb67d4e779f3c1902f8251507ed0d3c46ba785b ..."
+         ]
+      ],
+      [
          "RF",
          [
             4082,
@@ -336,13 +333,6 @@
          0,
          true,
          "35de4f7d"
-      ],
-      [
-         "RO",
-         [
-            65536,
-            "b6ecb233c38bab3fc69e831687c9f6719ec5f364b6ecb233c38bab3fc69e831687c9f6719ec5f364b6ecb233c38bab3fc69e831687c9f6719ec5f364b6ecb233 ..."
-         ]
       ],
       [
          "RF",
@@ -513,6 +503,13 @@
          "fee02b8a"
       ],
       [
+         "RO",
+         [
+            61398,
+            "97aac855d6fdbd32cff1b827e7d8f97092bfe07c97aac855d6fdbd32cff1b827e7d8f97092bfe07c97aac855d6fdbd32cff1b827e7d8f97092bfe07c97aac855 ..."
+         ]
+      ],
+      [
          "RF",
          [
             4082,
@@ -535,13 +532,6 @@
          0,
          true,
          "da94000e"
-      ],
-      [
-         "RO",
-         [
-            65536,
-            "6fae3f8f2ef94ae837f54ffd1fdc0eaa6abb17a66fae3f8f2ef94ae837f54ffd1fdc0eaa6abb17a66fae3f8f2ef94ae837f54ffd1fdc0eaa6abb17a66fae3f8f ..."
-         ]
       ],
       [
          "RF",
@@ -700,6 +690,13 @@
          "ca4254ef"
       ],
       [
+         "RO",
+         [
+            65536,
+            "029d1a6a2ab45b3d5fd342315ac66a181b911f7f029d1a6a2ab45b3d5fd342315ac66a181b911f7f029d1a6a2ab45b3d5fd342315ac66a181b911f7f029d1a6a ..."
+         ]
+      ],
+      [
          "RF",
          [
             4082,
@@ -734,13 +731,6 @@
          0,
          true,
          "fff406c4"
-      ],
-      [
-         "RO",
-         [
-            65536,
-            "f71a8a62df33cb35aa54d239af41fa10ee168f77f71a8a62df33cb35aa54d239af41fa10ee168f77f71a8a62df33cb35aa54d239af41fa10ee168f77f71a8a62 ..."
-         ]
       ],
       [
          "RF",
@@ -899,6 +889,13 @@
          "d43685bd"
       ],
       [
+         "RO",
+         [
+            32480,
+            "bda81916b8bd313ff9ea4458e0e6414dc8cf001abda81916b8bd313ff9ea4458e0e6414dc8cf001abda81916b8bd313ff9ea4458e0e6414dc8cf001abda81916 ..."
+         ]
+      ],
+      [
          "RF",
          [
             4082,
@@ -933,13 +930,6 @@
          0,
          true,
          "960771de"
-      ],
-      [
-         "RO",
-         [
-            19746,
-            "24f9575321ec7f7a60bb0a1d79b70f08519e4e5f24f9575321ec7f7a60bb0a1d79b70f08519e4e5f24f9575321ec7f7a60bb0a1d79b70f08519e4e5f24f95753 ..."
-         ]
       ],
       [
          "RF",
@@ -1000,42 +990,6 @@
          0,
          true,
          "29febc8d"
-      ],
-      [
-         "RF",
-         [
-            896,
-            "23BAsd7&jh23BAsd7&jh23BAsd7&jh23BAsd7&jh23BAsd7&jh23BAsd7&jh23BA ..."
-         ],
-         0,
-         true,
-         0,
-         true,
-         "9680ef6d"
-      ],
-      [
-         "RF",
-         [
-            12,
-            "Hello World!"
-         ],
-         1,
-         true,
-         0,
-         true,
-         "4d8c5652"
-      ],
-      [
-         "RF",
-         [
-            2,
-            "0x03e8"
-         ],
-         8,
-         true,
-         0,
-         true,
-         "df03ebbf"
       ]
    ]
 }

@@ -8,7 +8,7 @@
    "createWirelog": true,
    "description": "Send a ping after close message",
    "droppedByMe": true,
-   "duration": 5,
+   "duration": 4,
    "expectation": "Clean close with normal code, no pong.",
    "expected": {
       "OK": []
@@ -41,7 +41,7 @@
       "8": 1,
       "277": 1
    },
-   "started": "2022-12-31T17:02:08.621Z",
+   "started": "2023-01-03T07:15:10.936Z",
    "trafficStats": null,
    "txFrameStats": {
       "8": 1,

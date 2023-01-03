@@ -8,7 +8,7 @@
    "createWirelog": true,
    "description": "Send 10 Pings with payload.",
    "droppedByMe": true,
-   "duration": 6,
+   "duration": 5,
    "expectation": "Pongs for our Pings with all the payloads. Note: This is not required by the Spec .. but we check for this behaviour anyway. Clean close with normal code.",
    "expected": {
       "OK": [
@@ -122,11 +122,10 @@
    },
    "rxOctetStats": {
       "8": 1,
-      "45": 1,
-      "105": 1,
+      "150": 1,
       "276": 1
    },
-   "started": "2022-12-31T17:01:56.975Z",
+   "started": "2023-01-03T07:14:59.975Z",
    "trafficStats": null,
    "txFrameStats": {
       "8": 1,
@@ -385,7 +384,7 @@
       [
          "RO",
          [
-            105,
+            150,
             "8a8956d2e63226b39f5e39b3821f668a89c027311cb0464870af465531f18a8936096e584668173459680a75048a892ab19b825ad0e2ee45d0ffaf198a89be2a ..."
          ]
       ],
@@ -472,13 +471,6 @@
          0,
          true,
          "78ab1cfa"
-      ],
-      [
-         "RO",
-         [
-            45,
-            "8a89744c33ab042d4ac71b2d5786438a89d9c4a09fa9a5d9f3b6a5c4b2e18a898fcc2d31ffad545de0ad491cb6"
-         ]
       ],
       [
          "RF",

@@ -8,7 +8,7 @@
    "createWirelog": true,
    "description": "Send a text message with payload which is not valid UTF-8 in one fragment.<br><br>Payload: 0xedafbf",
    "droppedByMe": false,
-   "duration": 3,
+   "duration": 2,
    "expectation": "The connection is failed immediately, since the payload is not valid UTF-8.",
    "expected": {
       "OK": []
@@ -39,7 +39,7 @@
    "rxOctetStats": {
       "277": 1
    },
-   "started": "2022-12-31T17:02:08.147Z",
+   "started": "2023-01-03T07:15:10.692Z",
    "trafficStats": null,
    "txFrameStats": {
       "1": 1

@@ -8,7 +8,7 @@
    "createWirelog": true,
    "description": "Send text Message fragmented into 2 fragments, octets are sent in octet-wise chops.",
    "droppedByMe": true,
-   "duration": 12,
+   "duration": 5,
    "expectation": "Message is processed and echo'ed back to us.",
    "expected": {
       "OK": [
@@ -55,7 +55,7 @@
       "24": 1,
       "276": 1
    },
-   "started": "2022-12-31T17:01:57.147Z",
+   "started": "2023-01-03T07:15:00.077Z",
    "trafficStats": null,
    "txFrameStats": {
       "0": 1,

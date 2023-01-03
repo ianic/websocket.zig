@@ -8,7 +8,7 @@
    "createWirelog": true,
    "description": "Send small text message, then send frame with reserved control <b>Opcode = 14</b> and non-empty payload, then send Ping.",
    "droppedByMe": false,
-   "duration": 3,
+   "duration": 2,
    "expectation": "Echo for first message is received, but then connection is failed immediately, since reserved opcode frame is used. A Pong is not received.",
    "expected": {
       "NON-STRICT": [],
@@ -54,7 +54,7 @@
       "19": 1,
       "276": 1
    },
-   "started": "2022-12-31T17:01:57.105Z",
+   "started": "2023-01-03T07:15:00.056Z",
    "trafficStats": null,
    "txFrameStats": {
       "1": 1,

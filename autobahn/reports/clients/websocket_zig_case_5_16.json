@@ -8,7 +8,7 @@
    "createWirelog": true,
    "description": "Repeated 2x: Continuation Frame with FIN = false (where there is nothing to continue), then text Message fragmented into 2 fragments.",
    "droppedByMe": false,
-   "duration": 3,
+   "duration": 2,
    "expectation": "The connection is failed immediately, since there is no message to continue.",
    "expected": {
       "OK": []
@@ -38,7 +38,7 @@
    "rxOctetStats": {
       "276": 1
    },
-   "started": "2022-12-31T17:01:57.255Z",
+   "started": "2023-01-03T07:15:00.131Z",
    "trafficStats": null,
    "txFrameStats": {
       "0": 4,

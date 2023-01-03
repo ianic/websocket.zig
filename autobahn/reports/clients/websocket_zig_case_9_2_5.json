@@ -8,7 +8,7 @@
    "createWirelog": true,
    "description": "Send binary message message with payload of length 8 * 2**20 (16M).",
    "droppedByMe": true,
-   "duration": 507,
+   "duration": 434,
    "expectation": "Receive echo'ed binary message (with payload as sent).",
    "expected": {},
    "expectedClose": {
@@ -39,20 +39,16 @@
    },
    "rxOctetStats": {
       "8": 1,
-      "48": 1,
       "277": 1,
-      "4090": 1,
-      "12270": 2,
-      "16360": 1,
-      "20450": 1,
-      "24444": 1,
-      "24492": 1,
-      "32768": 98,
-      "41044": 1,
-      "57586": 1,
-      "65536": 76
+      "14480": 1,
+      "28376": 1,
+      "32692": 1,
+      "32768": 35,
+      "49338": 1,
+      "55400": 1,
+      "65536": 108
    },
-   "started": "2022-12-31T17:02:11.111Z",
+   "started": "2023-01-03T07:15:13.098Z",
    "trafficStats": null,
    "txFrameStats": {
       "2": 1,

@@ -8,7 +8,7 @@
    "createWirelog": true,
    "description": "Send ping with binary payload of 126 octets.",
    "droppedByMe": false,
-   "duration": 2,
+   "duration": 1,
    "expectation": "Connection is failed immediately (1002/Protocol Error), since control frames are only allowed to have payload up to and including 125 octets..",
    "expected": {
       "OK": []
@@ -38,7 +38,7 @@
    "rxOctetStats": {
       "276": 1
    },
-   "started": "2022-12-31T17:01:56.921Z",
+   "started": "2023-01-03T07:14:59.939Z",
    "trafficStats": null,
    "txFrameStats": {
       "9": 1

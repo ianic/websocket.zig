@@ -8,7 +8,7 @@
    "createWirelog": true,
    "description": "Send text message message with payload of length 65536. Sent out data in chops of 997 octets.",
    "droppedByMe": true,
-   "duration": 12,
+   "duration": 18,
    "expectation": "Receive echo'ed text message (with payload as sent). Clean close with normal code.",
    "expected": {
       "OK": [
@@ -54,12 +54,11 @@
    "rxOctetStats": {
       "8": 1,
       "275": 1,
-      "411": 1,
-      "5942": 1,
       "14480": 1,
-      "44839": 1
+      "22330": 1,
+      "28862": 1
    },
-   "started": "2022-12-31T17:01:56.754Z",
+   "started": "2023-01-03T07:14:59.839Z",
    "trafficStats": null,
    "txFrameStats": {
       "1": 1,
@@ -684,7 +683,7 @@
       [
          "RO",
          [
-            5942,
+            22330,
             "d3eacf04d3eacf04d3eacf04d3eacf04d3eacf04d3eacf04d3eacf04d3eacf04d3eacf04d3eacf04d3eacf04d3eacf04d3eacf04d3eacf04d3eacf04d3eacf04 ..."
          ]
       ],
@@ -699,13 +698,6 @@
          0,
          true,
          "e52ef9c0"
-      ],
-      [
-         "RO",
-         [
-            44839,
-            "d47da83cd47da83cd47da83cd47da83cd47da83cd47da83cd47da83c00fe0ff214e0ec8c3ecac6a63ecac6a63ecac6a63ecac6a63ecac6a63ecac6a63ecac6a6 ..."
-         ]
       ],
       [
          "RF",
@@ -766,6 +758,13 @@
          0,
          true,
          "ec079683"
+      ],
+      [
+         "RO",
+         [
+            28862,
+            "00fe0ff2c1e593e1ebcfb9cbebcfb9cbebcfb9cbebcfb9cbebcfb9cbebcfb9cbebcfb9cbebcfb9cbebcfb9cbebcfb9cbebcfb9cbebcfb9cbebcfb9cbebcfb9cb ..."
+         ]
       ],
       [
          "RF",
@@ -838,13 +837,6 @@
          0,
          true,
          "ed7d688a"
-      ],
-      [
-         "RO",
-         [
-            411,
-            "7cc8b0177cc8b0177cc8b0177cc8b0177cc8b0177cc8b0177cc8b0177cc8b0177cc8b0177cc8b0177cc8b0177cc8b0177cc8b0177cc8b0177cc8b0177cc8b017 ..."
-         ]
       ],
       [
          "RF",

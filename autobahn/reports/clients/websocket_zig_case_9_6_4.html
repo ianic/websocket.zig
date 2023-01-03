@@ -202,7 +202,7 @@ pre.wirelog_tcp_closed_by_peer {color: #fff; margin: 0; background-color: #000; 
       <center><a href="http://autobahn.ws/testsuite" title="Autobahn WebSocket Testsuite"><img src="http://autobahn.ws/static/img/ws_protocol_test_report.png"          border="0" width="820" height="46" alt="Autobahn WebSocket Testsuite Report"></img></a></center>
       <center><a href="http://autobahn.ws"           title="Autobahn WebSocket">          <img src="http://autobahn.ws/static/img/ws_protocol_test_report_autobahn.png" border="0" width="300" height="68" alt="Autobahn WebSocket">                 </img></a></center>
       <br/>
-      <p class="case case_ok">websocket.zig - <span style="font-size: 1.3em;"><b>Case 9.6.4</b></span> : Pass - <span style="font-size: 0.9em;"><b>173</b> ms @ 2022-12-31T17:02:19.623Z</a></p>
+      <p class="case case_ok">websocket.zig - <span style="font-size: 1.3em;"><b>Case 9.6.4</b></span> : Pass - <span style="font-size: 0.9em;"><b>79</b> ms @ 2023-01-03T07:15:20.976Z</a></p>
       <p class="case_text_block case_desc"><b>Case Description</b><br/><br/>Send binary message message with payload of length 1 * 2**20 (1M). Sent out data in chops of 512 octets.</p>
       <p class="case_text_block case_expect"><b>Case Expectation</b><br/><br/>Receive echo'ed text message (with payload as sent).</p>
 
@@ -251,16 +251,16 @@ Sec-WebSocket-Accept: ma9F7FXyp8Z4otiUKjyUukcbufw=</pre>
          <tr class="stats_header"><td>Chop Size</td><td>Count</td><td>Octets</td></tr>
          <tr class="stats_row"><td>8</td><td>1</td><td>8</td></tr>
          <tr class="stats_row"><td>277</td><td>1</td><td>277</td></tr>
-         <tr class="stats_row"><td>12270</td><td>1</td><td>12270</td></tr>
-         <tr class="stats_row"><td>16312</td><td>1</td><td>16312</td></tr>
-         <tr class="stats_row"><td>16456</td><td>1</td><td>16456</td></tr>
-         <tr class="stats_row"><td>16541</td><td>1</td><td>16541</td></tr>
-         <tr class="stats_row"><td>18560</td><td>1</td><td>18560</td></tr>
-         <tr class="stats_row"><td>25477</td><td>1</td><td>25477</td></tr>
-         <tr class="stats_row"><td>27512</td><td>1</td><td>27512</td></tr>
-         <tr class="stats_row"><td>32768</td><td>8</td><td>262144</td></tr>
-         <tr class="stats_row"><td>65536</td><td>10</td><td>655360</td></tr>
-         <tr class="stats_total"><td>Total</td><td>27</td><td>1050917</td></tr>
+         <tr class="stats_row"><td>4090</td><td>3</td><td>12270</td></tr>
+         <tr class="stats_row"><td>8180</td><td>1</td><td>8180</td></tr>
+         <tr class="stats_row"><td>12270</td><td>2</td><td>24540</td></tr>
+         <tr class="stats_row"><td>20450</td><td>1</td><td>20450</td></tr>
+         <tr class="stats_row"><td>32720</td><td>1</td><td>32720</td></tr>
+         <tr class="stats_row"><td>32768</td><td>23</td><td>753664</td></tr>
+         <tr class="stats_row"><td>32816</td><td>1</td><td>32816</td></tr>
+         <tr class="stats_row"><td>34920</td><td>1</td><td>34920</td></tr>
+         <tr class="stats_row"><td>65536</td><td>2</td><td>131072</td></tr>
+         <tr class="stats_total"><td>Total</td><td>37</td><td>1050917</td></tr>
       </table>
       <h3>Octets Transmitted by Chop Size</h3>
       <table>
