@@ -30,22 +30,15 @@ pub fn main() !void {
 }
 
 fn runTestCase(allocator: Allocator, no: usize) !void {
-    var path_buf: [128]u8 = undefined;
+    var uri_buf: [128]u8 = undefined;
     const hostname = "localhost";
-    const host = "localhost:9001";
     const port = 9001;
-    const uri = try std.fmt.bufPrint(&path_buf, "ws://{s}:{d}/runCase?case={d}&agent=websocket_test.zig", .{ hostname, port, no });
+    const uri = try std.fmt.bufPrint(&uri_buf, "ws://{s}:{d}/runCase?case={d}&agent=websocket_test.zig", .{ hostname, port, no });
 
-    var tcp_stm = try std.net.tcpConnectToHost(allocator, hostname, port);
-    var cli = try ws.client(
-        allocator,
-        tcp_stm.reader(),
-        tcp_stm.writer(),
-        host,
-        uri,
-    );
+    var tcp = try std.net.tcpConnectToHost(allocator, hostname, port);
+    var cli = try ws.client(allocator, tcp.reader(), tcp.writer(), uri);
     defer cli.deinit();
-    defer tcp_stm.close();
+    defer tcp.close();
 
     // echo loop read and send message
     while (cli.nextMessage()) |msg| {

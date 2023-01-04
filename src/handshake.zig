@@ -87,7 +87,7 @@ pub fn Client(comptime ReaderType: type, comptime WriterType: type) type {
             self.arena.deinit();
         }
 
-        pub fn writeRequest(self: *Self, host: []const u8, uri: []const u8) !void {
+        pub fn writeRequest(self: *Self, uri: []const u8) !void {
             var buf: [1024]u8 = undefined;
             const format = "GET {s} HTTP/1.1" ++ crlf ++
                 "Host: {s}" ++ crlf ++
@@ -97,7 +97,7 @@ pub fn Client(comptime ReaderType: type, comptime WriterType: type) type {
                 "Sec-WebSocket-Version: 13" ++ crlf ++
                 "Sec-WebSocket-Extensions: permessage-deflate;client_max_window_bits" ++ crlf ++
                 crlf;
-            try self.writer.writeAll(try fmt.bufPrint(&buf, format, .{ uri, host, self.sec_key }));
+            try self.writer.writeAll(try fmt.bufPrint(&buf, format, .{ uri, parseHost(uri), self.sec_key }));
         }
 
         pub fn assertValidResponse(self: *Self) !void {
@@ -228,10 +228,10 @@ fn clientInit(allocator: Allocator, reader: anytype, writer: anytype) Client(@Ty
 
 // do client handshake using stream
 // error on unsuccessful handshake
-pub fn client(allocator: Allocator, reader: anytype, writer: anytype, host: []const u8, uri: []const u8) !Options {
+pub fn client(allocator: Allocator, reader: anytype, writer: anytype, uri: []const u8) !Options {
     var cs = clientInit(allocator, reader, writer);
     defer cs.deinit();
-    try cs.writeRequest(host, uri);
+    try cs.writeRequest(uri);
     try cs.assertValidResponse();
     return cs.options;
 }
@@ -279,7 +279,7 @@ test "valid ws handshake" {
         "Sec-WebSocket-Accept: 9bQuZIN64KrRsqgxuR1CxYN94zQ=\r\n\r\n";
 
     var stm = testing_stream.init(http_response);
-    _ = try client(testing.allocator, stm.reader(), stm.writer(), "ws.example.com", "ws://ws.example.com/ws");
+    _ = try client(testing.allocator, stm.reader(), stm.writer(), "ws://ws.example.com/ws");
     try testing.expectEqualSlices(u8, stm.written(), &http_request.*);
 }
 
@@ -324,4 +324,19 @@ fn showBuf(buf: []const u8) void {
     for (buf) |b|
         std.debug.print("0x{x:0>2}, ", .{b});
     std.debug.print("\n", .{});
+}
+
+fn parseHost(uri: []const u8) []const u8 {
+    var start = std.mem.indexOf(u8, uri, "//") orelse 0;
+    start += if (start > 0) 2 else 0;
+    const end = std.mem.indexOfPos(u8, uri, start, "/") orelse uri.len;
+    return uri[start..end];
+}
+
+test "parseHost from uri" {
+    try testing.expectEqualStrings("example.com", parseHost("ws://example.com"));
+    try testing.expectEqualStrings("example.com:80", parseHost("ws://example.com:80/path"));
+    try testing.expectEqualStrings("example.com:80", parseHost("example.com:80/path"));
+    try testing.expectEqualStrings("example.com:80", parseHost("example.com:80"));
+    try testing.expectEqualStrings("localhost:9001", parseHost("ws://localhost:9001/path"));
 }

@@ -8,10 +8,9 @@ pub fn client(
     allocator: std.mem.Allocator,
     inner_reader: anytype,
     inner_writer: anytype,
-    host: []const u8,
     uri: []const u8,
 ) !stream.Stream(@TypeOf(inner_reader), @TypeOf(inner_writer)) {
-    const options = try handshake.client(allocator, inner_reader, inner_writer, host, uri);
+    const options = try handshake.client(allocator, inner_reader, inner_writer, uri);
     return try stream.client(allocator, inner_reader, inner_writer, options);
 }
 
