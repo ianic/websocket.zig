@@ -2,7 +2,7 @@
 
 docker stop fuzzingserver || true
 
-mkdir -p reports/client
+mkdir -p reports/clients
 
 docker run -it --rm \
     -v "${PWD}/config:/config" \

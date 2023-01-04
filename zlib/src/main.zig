@@ -125,11 +125,16 @@ fn zStreamDeinit(allocator: Allocator, stream: *c.z_stream) void {
 
 pub const CompressorOptions = struct {
     const HeaderOptions = enum {
-        none, // raw deflate data with no zlib header or trailer,
+        none, // raw deflate data with no zlib header or trailer
         zlib,
-        gzip, // to write a simple gzip header and trailer around the compressed data instead of a zlib wrapper.
+        gzip, // to write a simple gzip header and trailer around the compressed data instead of a zlib wrapper
     };
-    // TODO add compression into options
+    compression_level: c_int = c.Z_DEFAULT_COMPRESSION,
+
+    // memLevel=1 uses minimum memory but is slow and reduces compression ratio; memLevel=9 uses maximum memory for optimal speed. The default value is 8.
+    memory_level: c_int = 8,
+
+    strategy: c_int = c.Z_DEFAULT_STRATEGY,
 
     header: HeaderOptions = .zlib,
     window_size: u4 = 15, // in the range 9..15, base two logarithm of the maximum window size (the size of the history buffer).
@@ -156,25 +161,20 @@ pub fn CompressorWriter(comptime WriterType: type) type {
         const WriterError = Error || WriterType.Error;
         const Writer = std.io.Writer(*Self, WriterError, write);
 
-        pub fn init(allocator: Allocator, inner_writer: WriterType, options: CompressorOptions) !Self {
+        pub fn init(allocator: Allocator, inner_writer: WriterType, opt: CompressorOptions) !Self {
             var stream = try zStreamInit(allocator);
             errdefer zStreamDeinit(allocator, stream);
 
-            const rc = c.deflateInit2(
+            try checkRC(c.deflateInit2(
                 stream,
-                c.Z_DEFAULT_COMPRESSION,
+                opt.compression_level,
                 c.Z_DEFLATED, // only option
-                options.windowSize(),
-                8, // memLevel
-                c.Z_DEFAULT_STRATEGY,
-            );
-            if (rc != c.Z_OK) return errorFromInt(rc);
+                opt.windowSize(),
+                opt.memory_level,
+                opt.strategy,
+            ));
 
-            return .{
-                .allocator = allocator,
-                .stream = stream,
-                .inner = inner_writer,
-            };
+            return .{ .allocator = allocator, .stream = stream, .inner = inner_writer };
         }
 
         pub fn deinit(self: *Self) void {
@@ -318,16 +318,16 @@ pub const Compressor = struct {
 
     const Self = @This();
 
-    pub fn init(allocator: Allocator, options: CompressorOptions) !Self {
+    pub fn init(allocator: Allocator, opt: CompressorOptions) !Self {
         var stream = try zStreamInit(allocator);
         errdefer zStreamDeinit(allocator, stream);
         try checkRC(c.deflateInit2(
             stream,
-            c.Z_DEFAULT_COMPRESSION,
+            opt.compression_level,
             c.Z_DEFLATED, // only option
-            options.windowSize(),
-            8, // memLevel
-            c.Z_DEFAULT_STRATEGY,
+            opt.windowSize(),
+            opt.memory_level,
+            opt.strategy,
         ));
         return .{ .allocator = allocator, .stream = stream };
     }
@@ -341,6 +341,8 @@ pub const Compressor = struct {
         try checkRC(c.deflateReset(self.stream));
     }
 
+    // Compresses to new allocated buffer.
+    // Caller owns returned memory.
     pub fn compressAllAlloc(self: *Self, uncompressed: []const u8) ![]u8 {
         self.stream.next_in = @intToPtr([*]u8, @ptrToInt(uncompressed.ptr));
         self.stream.avail_in = @intCast(c_uint, uncompressed.len);
@@ -395,6 +397,8 @@ pub const Decompressor = struct {
         try checkRC(c.inflateReset(self.stream));
     }
 
+    // Decompresses to new allocated buffer.
+    // Caller owns returned memory.
     pub fn decompressAllAlloc(self: *Self, compressed: []const u8) ![]u8 {
         self.stream.next_in = @intToPtr([*]u8, @ptrToInt(compressed.ptr));
         self.stream.avail_in = @intCast(c_uint, compressed.len);
