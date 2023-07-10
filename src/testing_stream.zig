@@ -31,7 +31,7 @@ pub fn TestingStream(comptime output_len: usize) type {
 
         pub fn read(self: *Self, dest: []u8) ReadError!usize {
             //        std.debug.print("read input.len: {d}, read_pos: {d}\n", .{ self.input.len, self.read_pos });
-            const size = std.math.min(dest.len, self.input.len - self.read_pos);
+            const size = @min(dest.len, self.input.len - self.read_pos);
             const end = self.read_pos + size;
 
             mem.copy(u8, dest[0..size], self.input[self.read_pos..end]);

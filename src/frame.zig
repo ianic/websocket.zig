@@ -151,21 +151,21 @@ pub const Frame = struct {
             payload_len;
         assert(buf.len >= required_buf_len);
 
-        buf[0] = (@intCast(u8, self.fin) << 7) +
-            (@intCast(u8, self.rsv1) << 6) +
+        buf[0] = (@as(u8, @intCast(self.fin)) << 7) +
+            (@as(u8, @intCast(self.rsv1)) << 6) +
             //(@intCast(u8, self.rsv2) << 5) +
             //(@intCast(u8, self.rsv3) << 4) +
-            @enumToInt(self.opcode);
+            @intFromEnum(self.opcode);
 
         var offset: usize = 1;
 
         buf[1] = if (masked) 0x80 else 0;
         if (payload_bytes == 1) {
-            buf[1] += @intCast(u8, payload_len);
+            buf[1] += @as(u8, @intCast(payload_len));
             offset = 2;
         } else if (payload_bytes == 3) {
             buf[1] += 126;
-            std.mem.writeInt(u16, buf[2..4], @intCast(u16, payload_len), .Big);
+            std.mem.writeInt(u16, buf[2..4], @as(u16, @intCast(payload_len)), .Big);
             offset = 4;
         } else {
             buf[1] += 127;
@@ -207,7 +207,7 @@ pub const Frame = struct {
     }
 
     pub fn maskUnmask(mask: []const u8, buf: []u8) void {
-        for (buf) |c, i|
+        for (buf, 0..) |c, i|
             buf[i] = c ^ mask[i % 4];
     }
 

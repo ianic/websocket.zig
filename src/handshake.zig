@@ -339,4 +339,5 @@ test "parseHost from uri" {
     try testing.expectEqualStrings("example.com:80", parseHost("example.com:80/path"));
     try testing.expectEqualStrings("example.com:80", parseHost("example.com:80"));
     try testing.expectEqualStrings("localhost:9001", parseHost("ws://localhost:9001/path"));
+    try testing.expectEqualStrings("something", parseHost("something"));
 }
