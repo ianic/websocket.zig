@@ -31,6 +31,7 @@ pub const Message = struct {
             .encoding = encoding,
             .payload = payload,
         };
+        errdefer self.deinit();
         try self.validate();
         return self;
     }
@@ -88,6 +89,7 @@ pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
                     defer frame.deinit();
                     try self.handleControlFrame(&frame);
                 } else {
+                    errdefer frame.deinit();
                     try frame.assertValidContinuation(self.last_frame_fragment);
                     self.last_frame_fragment = frame.fragment();
                     return frame;
@@ -296,6 +298,7 @@ pub fn Reader(comptime ReaderType: type) type {
                 .payload = payload,
                 .allocator = if (payload.len > 0) self.allocator else null,
             };
+            errdefer frm.deinit();
             try frm.assertValid();
             return frm;
         }

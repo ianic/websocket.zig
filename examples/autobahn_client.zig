@@ -1,5 +1,5 @@
 const std = @import("std");
-const ws = @import("websocket");
+const ws = @import("ws");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 
@@ -36,18 +36,18 @@ fn runTestCase(allocator: Allocator, no: usize) !void {
     const uri = try std.fmt.bufPrint(&uri_buf, "ws://{s}:{d}/runCase?case={d}&agent=websocket_test.zig", .{ hostname, port, no });
 
     var tcp = try std.net.tcpConnectToHost(allocator, hostname, port);
+    defer tcp.close();
     var cli = try ws.client(allocator, tcp.reader(), tcp.writer(), uri);
     defer cli.deinit();
-    defer tcp.close();
 
     // echo loop read and send message
     while (cli.nextMessage()) |msg| {
+        defer msg.deinit();
         try cli.sendMessage(msg);
-        msg.deinit();
     }
-    if (cli.err) |_| {
-        std.debug.print("e", .{});
-        //std.log.err("case: {d} {}", .{ no, err });
+    if (cli.err) |err| {
+        //std.debug.print("e", .{});
+        std.log.err("case: {d} {}", .{ no, err });
     } else {
         std.debug.print(".", .{});
     }
