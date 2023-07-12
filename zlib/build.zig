@@ -3,14 +3,25 @@ const zlib = @import("zlib.zig");
 
 pub fn build(b: *std.build.Builder) void {
     const target = b.standardTargetOptions(.{});
-    const mode = b.standardReleaseOptions();
+    const optimize = b.standardOptimizeOption(.{});
 
-    const lib = zlib.create(b, target, mode);
-    lib.step.install();
+    const lib = zlib.create(b, target, optimize);
+    b.installArtifact(lib.step);
 
-    const tests = b.addTest("src/main.zig");
+    const tests = b.addTest(.{
+        .root_source_file = .{ .path = "src/main.zig" },
+    });
     lib.link(tests, .{});
 
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&tests.step);
+
+    const bin = b.addExecutable(.{
+        .name = "example1",
+        .root_source_file = .{ .path = "example/example1.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    lib.link(bin, .{ .import_name = "zlib" });
+    b.installArtifact(bin);
 }

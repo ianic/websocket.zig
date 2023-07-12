@@ -64,9 +64,9 @@ fn zalloc(private: ?*anyopaque, items: c_uint, size: c_uint) callconv(.C) ?*anyo
     if (private == null)
         return null;
 
-    const allocator = @ptrCast(*Allocator, @alignCast(@alignOf(*Allocator), private.?));
-    var buf = allocator.alloc(u8, ZallocHeader.size_of_aligned + (items * size)) catch return null;
-    const header = @ptrCast(*ZallocHeader, @alignCast(@alignOf(*ZallocHeader), buf.ptr));
+    const allocator: *Allocator = @ptrCast(@alignCast(private.?));
+    var buf = allocator.allocWithOptions(u8, ZallocHeader.size_of_aligned + (items * size), @alignOf(*ZallocHeader), null) catch return null;
+    const header: *ZallocHeader = @ptrCast(@alignCast(buf.ptr));
     header.* = .{
         .magic = magic_value,
         .size = items * size,
@@ -79,15 +79,16 @@ fn zfree(private: ?*anyopaque, addr: ?*anyopaque) callconv(.C) void {
     if (private == null)
         return;
 
-    const allocator = @ptrCast(*Allocator, @alignCast(@alignOf(*Allocator), private.?));
-    const header = @intToPtr(*ZallocHeader, @ptrToInt(addr.?) - ZallocHeader.size_of_aligned);
+    const allocator: *Allocator = @ptrCast(@alignCast(private.?));
+    const header = @as(*ZallocHeader, @ptrFromInt(@intFromPtr(addr.?) - ZallocHeader.size_of_aligned));
+
     if (builtin.mode != .ReleaseFast) {
         if (header.magic != magic_value)
             @panic("magic value is incorrect");
     }
 
     var buf: []align(alignment) u8 = undefined;
-    buf.ptr = @ptrCast([*]align(alignment) u8, @alignCast(alignment, header));
+    buf.ptr = @as([*]align(alignment) u8, @ptrCast(header));
     buf.len = ZallocHeader.size_of_aligned + header.size;
     allocator.free(buf);
 }
@@ -118,7 +119,7 @@ fn zStreamInit(allocator: Allocator) !*c.z_stream {
 }
 
 fn zStreamDeinit(allocator: Allocator, stream: *c.z_stream) void {
-    const pinned = @ptrCast(*Allocator, @alignCast(@alignOf(*Allocator), stream.@"opaque".?));
+    const pinned: *Allocator = @ptrCast(@alignCast(stream.@"opaque".?));
     allocator.destroy(pinned);
     allocator.destroy(stream);
 }
@@ -203,8 +204,8 @@ pub fn CompressorWriter(comptime WriterType: type) type {
             var tmp: [4096]u8 = undefined;
 
             // uncompressed
-            self.stream.next_in = @intToPtr([*]u8, @ptrToInt(buf.ptr));
-            self.stream.avail_in = @intCast(c_uint, buf.len);
+            self.stream.next_in = @as([*]u8, @ptrFromInt(@intFromPtr(buf.ptr)));
+            self.stream.avail_in = @as(c_uint, @intCast(buf.len));
 
             while (true) {
                 // compressed
@@ -288,10 +289,10 @@ pub fn DecompressorReader(comptime ReaderType: type) type {
             self.pos += try self.inner.readAll(self.tmp[self.pos..]);
 
             self.stream.next_in = &self.tmp;
-            self.stream.avail_in = @intCast(c_uint, self.pos);
+            self.stream.avail_in = @as(c_uint, @intCast(self.pos));
 
-            self.stream.next_out = @intToPtr([*]u8, @ptrToInt(buf.ptr));
-            self.stream.avail_out = @intCast(c_uint, buf.len);
+            self.stream.next_out = @as([*]u8, @ptrFromInt(@intFromPtr(buf.ptr)));
+            self.stream.avail_out = @as(c_uint, @intCast(buf.len));
 
             var rc = c.inflate(self.stream, c.Z_SYNC_FLUSH);
             if (rc != c.Z_OK and rc != c.Z_STREAM_END)
@@ -344,8 +345,8 @@ pub const Compressor = struct {
     // Compresses to new allocated buffer.
     // Caller owns returned memory.
     pub fn compressAllAlloc(self: *Self, uncompressed: []const u8) ![]u8 {
-        self.stream.next_in = @intToPtr([*]u8, @ptrToInt(uncompressed.ptr));
-        self.stream.avail_in = @intCast(c_uint, uncompressed.len);
+        self.stream.next_in = @as([*]u8, @ptrFromInt(@intFromPtr(uncompressed.ptr)));
+        self.stream.avail_in = @as(c_uint, @intCast(uncompressed.len));
 
         var tmp = try self.allocator.alloc(u8, chunk_size);
         var len: usize = 0; // used part of the tmp buffer
@@ -353,8 +354,8 @@ pub const Compressor = struct {
         var flag = c.Z_PARTIAL_FLUSH;
         while (true) {
             var out = tmp[len..];
-            self.stream.next_out = @intToPtr([*]u8, @ptrToInt(out.ptr));
-            self.stream.avail_out = @intCast(c_uint, out.len);
+            self.stream.next_out = @as([*]u8, @ptrFromInt(@intFromPtr(out.ptr)));
+            self.stream.avail_out = @as(c_uint, @intCast(out.len));
 
             var rc = c.deflate(self.stream, flag);
             if (rc != c.Z_OK and rc != c.Z_STREAM_END)
@@ -400,15 +401,15 @@ pub const Decompressor = struct {
     // Decompresses to new allocated buffer.
     // Caller owns returned memory.
     pub fn decompressAllAlloc(self: *Self, compressed: []const u8) ![]u8 {
-        self.stream.next_in = @intToPtr([*]u8, @ptrToInt(compressed.ptr));
-        self.stream.avail_in = @intCast(c_uint, compressed.len);
+        self.stream.next_in = @as([*]u8, @ptrFromInt(@intFromPtr(compressed.ptr)));
+        self.stream.avail_in = @as(c_uint, @intCast(compressed.len));
 
         var tmp = try self.allocator.alloc(u8, chunk_size);
         var len: usize = 0; // inflated part of the tmp buffer
         while (true) {
             var out = tmp[len..];
-            self.stream.next_out = @intToPtr([*]u8, @ptrToInt(out.ptr));
-            self.stream.avail_out = @intCast(c_uint, out.len);
+            self.stream.next_out = @as([*]u8, @ptrFromInt(@intFromPtr(out.ptr)));
+            self.stream.avail_out = @as(c_uint, @intCast(out.len));
 
             var rc = c.inflate(self.stream, c.Z_SYNC_FLUSH);
             if (rc != c.Z_OK and rc != c.Z_STREAM_END) {
@@ -439,7 +440,7 @@ test "compress gzip with zig interface" {
     try cmp.flush();
 
     // decompress with zig std lib gzip
-    var dcmp = try std.compress.gzip.gzipStream(allocator, fifo.reader());
+    var dcmp = try std.compress.gzip.decompress(allocator, fifo.reader());
     defer dcmp.deinit();
     const actual = try dcmp.reader().readAllAlloc(allocator, std.math.maxInt(usize));
     defer allocator.free(actual);
@@ -510,4 +511,22 @@ fn showBuf(buf: []const u8) void {
     for (buf) |b|
         std.debug.print("0x{x:0>2}, ", .{b});
     std.debug.print("\n", .{});
+}
+
+test "Hello" {
+    const allocator = std.testing.allocator;
+    const input = "Hello";
+
+    var cmp = try Compressor.init(allocator, .{ .header = .none });
+    defer cmp.deinit();
+    const compressed = try cmp.compressAllAlloc(input);
+    defer allocator.free(compressed);
+    //try std.testing.expectEqualSlices(u8, &[_]u8{ 0xf2, 0x48, 0xcd, 0xc9, 0xc9, 0x07, 0x04, 0x00, 0x00, 0xff, 0xff }, compressed);
+
+    var dcp = try Decompressor.init(allocator, .{ .header = .none });
+    defer dcp.deinit();
+    const decompressed = try dcp.decompressAllAlloc(compressed);
+    defer allocator.free(decompressed);
+
+    try std.testing.expectEqualSlices(u8, input, decompressed);
 }

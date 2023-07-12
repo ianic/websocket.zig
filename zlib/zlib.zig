@@ -20,14 +20,19 @@ pub const Library = struct {
         other.linkLibrary(self.step);
 
         if (opts.import_name) |import_name|
-            other.addPackagePath(import_name, package_path);
+            other.addAnonymousModule(
+                import_name,
+                .{ .source_file = .{ .path = package_path } },
+            );
     }
 };
 
-pub fn create(b: *std.build.Builder, target: std.zig.CrossTarget, mode: std.builtin.Mode) Library {
-    var ret = b.addStaticLibrary("z", null);
-    ret.setTarget(target);
-    ret.setBuildMode(mode);
+pub fn create(b: *std.build.Builder, target: std.zig.CrossTarget, optimize: std.builtin.OptimizeMode) Library {
+    const ret = b.addStaticLibrary(.{
+        .name = "z",
+        .target = target,
+        .optimize = optimize,
+    });
     ret.linkLibC();
     ret.addCSourceFiles(srcs, &.{"-std=c89"});
 
