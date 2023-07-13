@@ -128,96 +128,68 @@ pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
             const encoding: Message.Encoding = if (frame.opcode == .binary) .binary else .text;
             const compressed = frame.isCompressed();
 
-            if (frame.isFin() and !compressed)
-                // if single frame return frame payload as message payload
-                return self.initMessage(encoding, frame.payload);
+            if (frame.isFin()) // if single frame return frame payload as message payload
+                return self.initMessage(encoding, frame.payload, compressed);
 
             // collect frames payload
-            var payload = try std.ArrayList(u8).initCapacity(self.allocator, frame.payload.len);
-            defer payload.deinit();
+            var payload = try self.allocator.alloc(u8, frame.payload.len);
+            @memcpy(payload, frame.payload);
 
             while (true) {
-                try payload.appendSlice(frame.payload);
+                frame = try self.readDataFrame();
+                var start = payload.len;
+                // append frame.payload  to payload
+                payload = try self.allocator.realloc(payload, start + frame.payload.len);
+                @memcpy(payload[start..], frame.payload);
                 const isFin = frame.isFin();
                 frame.deinit();
 
-                if (isFin) return if (!compressed)
-                    self.initMessage(encoding, try payload.toOwnedSlice())
-                else
-                    self.initCompressedMessage(encoding, &payload);
-
-                frame = try self.readDataFrame();
+                if (isFin)
+                    return self.initMessage(encoding, payload, compressed);
             }
         }
 
         pub fn sendMessage(self: *Self, msg: Message) !void {
-            try self.send(.{ .encoding = msg.encoding, .payload = msg.payload });
+            try self.send(msg.encoding, msg.payload, false);
         }
 
-        const SendOptions = struct {
-            encoding: Message.Encoding = .binary,
-            payload: ?[]const u8 = null,
-
-            // if we already have payload in ws compression format
-            // deflated without header and footer
-            // usefull if we are sending same message to multiple destinations
-            compressed_payload: ?[]const u8 = null,
-
+        pub fn send(
+            self: *Self,
+            encoding: Message.Encoding,
+            payload: []const u8,
             // prevent payload compression
             // usefull if payload is of already compressed type, for example jpg
-            no_compress: bool = false,
-        };
-
-        pub fn send(self: *Self, opt: SendOptions) !void {
-            if (opt.payload == null and opt.compressed_payload == null) return;
-            if (opt.compressed_payload) |compressed| {
-                if (self.options.per_message_deflate) {
-                    try self.writer.message(opt.encoding, compressed, true);
+            no_compress: bool,
+        ) !void {
+            if (!no_compress and payload.len >= self.options.compress_threshold) {
+                if (self.compressor) |*cmp| {
+                    // send compressed
+                    const compressed = try cmp.compressAllAlloc(payload);
+                    defer self.allocator.free(compressed);
+                    if (self.options.client_no_context_takeover) try cmp.reset();
+                    try self.writer.message(encoding, compressed, true);
                     return;
                 }
             }
-            if (opt.payload) |payload| {
-                if (!opt.no_compress and payload.len >= self.options.compress_threshold) {
-                    if (self.compressor) |*cmp| {
-                        // send compressed
-                        const compressed = try cmp.compressAllAlloc(payload);
-                        defer self.allocator.free(compressed);
-                        if (self.options.client_no_context_takeover) try cmp.reset();
-                        try self.writer.message(opt.encoding, compressed[0 .. compressed.len - deflate_tail.len], true);
-                        return;
-                    }
+            try self.writer.message(encoding, payload, false);
+            return;
+        }
+
+        fn initMessage(
+            self: *Self,
+            encoding: Message.Encoding,
+            payload: []const u8,
+            payload_compressed: bool,
+        ) !Message {
+            if (payload_compressed) {
+                if (self.decompressor) |*dcmp| {
+                    const decompressed = try dcmp.decompressAllAlloc(payload);
+                    if (self.options.server_no_context_takeover) try dcmp.reset();
+                    return Message.init(self.allocator, encoding, decompressed);
                 }
-                try self.writer.message(opt.encoding, payload, false);
-                return;
+                return error.DeflateNotSupported;
             }
-            return error.DeflateNotSupported; // only compressed_payload is set but per_message_deflate not supported
-        }
-
-        // compress payload into websocket format
-        // can be used in send
-        // caller owns returned memory
-        fn compress(self: Self, payload: []const u8) ![]const u8 {
-            if (self.compressor) |*cmp| {
-                const compressed = try cmp.compressAllAlloc(payload);
-                return self.allocator.realloc(compressed, compressed.len - deflate_tail.len);
-            }
-            return error.DeflateNotSupported;
-        }
-
-        fn initMessage(self: *Self, encoding: Message.Encoding, payload: []const u8) !Message {
             return Message.init(self.allocator, encoding, payload);
-        }
-
-        const deflate_tail = [_]u8{ 0x0, 0x0, 0xff, 0xff };
-
-        fn initCompressedMessage(self: *Self, encoding: Message.Encoding, compressed: *std.ArrayList(u8)) !Message {
-            if (self.decompressor) |*dcmp| {
-                try compressed.appendSlice(&deflate_tail);
-                const decompressed = try dcmp.decompressAllAlloc(compressed.items);
-                if (self.options.server_no_context_takeover) try dcmp.reset();
-                return Message.init(self.allocator, encoding, decompressed);
-            }
-            return error.DeflateNotSupported;
         }
 
         pub fn deinit(self: *Self) void {
@@ -394,11 +366,11 @@ pub fn client(
         .writer = try writer(allocator, inner_writer),
         .options = options,
         .decompressor = if (options.per_message_deflate)
-            try zlib.Decompressor.init(allocator, .{ .header = .none, .window_size = options.server_max_window_bits })
+            try zlib.Decompressor.init(allocator, .{ .header = .ws, .window_size = options.server_max_window_bits })
         else
             null,
         .compressor = if (options.per_message_deflate)
-            try zlib.Compressor.init(allocator, .{ .header = .none, .window_size = options.client_max_window_bits })
+            try zlib.Compressor.init(allocator, .{ .header = .ws, .window_size = options.client_max_window_bits })
         else
             null,
     };
