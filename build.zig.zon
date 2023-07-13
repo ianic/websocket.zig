@@ -1,0 +1,10 @@
+.{
+    .name = "ws",
+    .version = "0.1.0",
+    .dependencies = .{
+        .zlib = .{
+            .url = "https://github.com/ianic/zig-zlib/archive/9186b0f5fdfd6c29cd04f7ada7b0113fe1f63611.tar.gz",
+            .hash = "122001cc3da638f9315f08fb51fe5aace68c254b59bcac3457e20d746565bad7fe04",
+        },
+    },
+}
