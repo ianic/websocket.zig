@@ -1,3 +1,0 @@
-[submodule "zlib/zlib"]
-	path = zlib/zlib
-	url = git@github.com:madler/zlib.git
