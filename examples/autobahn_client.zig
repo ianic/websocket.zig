@@ -45,9 +45,9 @@ fn runTestCase(allocator: Allocator, no: usize) !void {
         defer msg.deinit();
         try cli.sendMessage(msg);
     }
-    if (cli.err) |err| {
-        //std.debug.print("e", .{});
-        std.log.err("case: {d} {}", .{ no, err });
+    if (cli.err) |_| {
+        std.debug.print("e", .{});
+        //std.log.err("case: {d} {}", .{ no, err });
     } else {
         std.debug.print(".", .{});
     }
