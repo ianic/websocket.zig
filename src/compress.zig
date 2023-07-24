@@ -42,7 +42,7 @@ const Compressor = struct {
         if (self.inner == null)
             self.inner = try deflate.compressor(self.alloc, self.writer(), .{});
 
-        try self.inner.?.writer().writeAll(data);
+        assert(data.len == try self.inner.?.write(data));
         try self.inner.?.close();
         var buf = self.buf.?;
         self.buf = null;
@@ -113,7 +113,10 @@ const Decompressor = struct {
 
         self.buf = data;
         self.pos = 0;
+
         var out = try self.inner.?.reader().readAllAlloc(self.alloc, std.math.maxInt(usize));
+        try self.inner.?.reset2();
+
         self.buf = null;
         self.pos = 0;
         return out;
@@ -132,7 +135,11 @@ test "Compressor/Decompressor" {
     defer cmp.deinit();
     var compressed = try cmp.compress(input);
     defer alloc.free(compressed);
-    try testing.expectEqualSlices(u8, compressed, &[_]u8{ 0xf2, 0x48, 0xcd, 0xc9, 0xc9, 0x07, 0x04 });
+    try testing.expectEqualSlices(
+        u8,
+        &[_]u8{ 0xf2, 0x48, 0xcd, 0xc9, 0xc9, 0x07, 0x04 },
+        compressed,
+    );
 
     var dcp = Decompressor.init(alloc);
     defer dcp.deinit();
@@ -152,7 +159,7 @@ test "deflate compress/decompress" {
     _ = try comp.write(input);
     try comp.close();
     var compressed = compressor_stm.items;
-    //showBuf(compressed);
+
     try testing.expectEqualSlices(u8, compressed, &[_]u8{ 0xf2, 0x48, 0xcd, 0xc9, 0xc9, 0x07, 0x04, 0x00, 0x00, 0xff, 0xff });
 
     var decompressor_stm = io.fixedBufferStream(compressed);
@@ -163,4 +170,37 @@ test "deflate compress/decompress" {
     defer allocator.free(decompressed);
     try testing.expectEqual(input.len, decompressed.len);
     try testing.expectEqualSlices(u8, input, decompressed);
+}
+
+test "compress with sliding window" {
+    const alloc = testing.allocator;
+    const input = "Hello";
+
+    var cmp = Compressor.init(alloc);
+    defer cmp.deinit();
+    var c1 = try cmp.compress(input);
+    defer alloc.free(c1);
+    try testing.expectEqualSlices(
+        u8,
+        &[_]u8{ 0xf2, 0x48, 0xcd, 0xc9, 0xc9, 0x07, 0x04 },
+        c1,
+    );
+
+    var dcp = Decompressor.init(alloc);
+    defer dcp.deinit();
+    var d1 = try dcp.decompress(c1);
+    defer alloc.free(d1);
+    try testing.expectEqualSlices(u8, input, d1);
+
+    var c2 = try cmp.compress(input);
+    defer alloc.free(c2);
+    try testing.expectEqualSlices(
+        u8,
+        &[_]u8{ 0x02, 0x08, 0x4c, 0x00, 0x02 },
+        c2,
+    );
+
+    var d2 = try dcp.decompress(c2);
+    defer alloc.free(d2);
+    try testing.expectEqualSlices(u8, input, d2);
 }
