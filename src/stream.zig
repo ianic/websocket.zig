@@ -31,7 +31,6 @@ pub const Message = struct {
             .encoding = encoding,
             .payload = payload,
         };
-        errdefer self.deinit();
         try self.validate();
         return self;
     }
@@ -75,10 +74,15 @@ pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
         allocator: Allocator,
         err: ?anyerror = null,
 
+        // used in validation
         last_frame_fragment: Frame.Fragment = .unfragmented,
-        decompressor: ?zlib.Decompressor = null,
-        compressor: ?zlib.Compressor = null,
-        options: Options = .{},
+
+        // message compression
+        decompressor: ?zlib.Decompressor = null, // not null if per_message_deflate is negotiated
+        compressor: ?zlib.Compressor = null, // not null if per_message_deflate is negotiated
+        reset_compressor: bool = false, // true if sliding window is not negotiated
+        reset_decompressor: bool = false, // true if sliding window is not negotiated
+        compress_threshold: usize = 126, // don't compress tiny payload
 
         const Self = @This();
 
@@ -128,23 +132,33 @@ pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
             const encoding: Message.Encoding = if (frame.opcode == .binary) .binary else .text;
             const compressed = frame.isCompressed();
 
-            if (frame.isFin()) // if single frame return frame payload as message payload
+            if (frame.isFin()) {
+                // if single frame return frame payload as message payload
+                // message takes ownership of the allocated payload
+                errdefer frame.deinit();
                 return self.initMessage(encoding, frame.payload, compressed);
+            }
 
-            // collect frames payload
-            var payload = try self.allocator.alloc(u8, frame.payload.len);
-            @memcpy(payload, frame.payload);
+            // other frames payload will be collected into payload
+            var payload = blk: {
+                errdefer frame.deinit();
+                const payload = try self.allocator.alloc(u8, frame.payload.len);
+                @memcpy(payload, frame.payload);
+                break :blk payload;
+            };
+            frame.deinit();
 
             while (true) {
+                errdefer self.allocator.free(payload);
                 frame = try self.readDataFrame();
-                var start = payload.len;
+                defer frame.deinit();
+
                 // append frame.payload  to payload
+                var start = payload.len;
                 payload = try self.allocator.realloc(payload, start + frame.payload.len);
                 @memcpy(payload[start..], frame.payload);
-                const isFin = frame.isFin();
-                frame.deinit();
 
-                if (isFin)
+                if (frame.isFin())
                     return self.initMessage(encoding, payload, compressed);
             }
         }
@@ -161,12 +175,12 @@ pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
             // usefull if payload is of already compressed type, for example jpg
             no_compress: bool,
         ) !void {
-            if (!no_compress and payload.len >= self.options.compress_threshold) {
+            if (!no_compress and payload.len >= self.compress_threshold) {
                 if (self.compressor) |*cmp| {
                     // send compressed
                     const compressed = try cmp.compressAllAlloc(payload);
                     defer self.allocator.free(compressed);
-                    if (self.options.client_no_context_takeover) try cmp.reset();
+                    if (self.reset_compressor) try cmp.reset();
                     try self.writer.message(encoding, compressed, true);
                     return;
                 }
@@ -182,9 +196,11 @@ pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
             payload_compressed: bool,
         ) !Message {
             if (payload_compressed) {
-                if (self.decompressor) |*dcmp| {
-                    const decompressed = try dcmp.decompressAllAlloc(payload);
-                    if (self.options.server_no_context_takeover) try dcmp.reset();
+                if (self.decompressor) |*dcp| {
+                    defer self.allocator.free(payload);
+                    const decompressed = try dcp.decompressAllAlloc(payload);
+                    errdefer self.allocator.free(decompressed);
+                    if (self.reset_decompressor) try dcp.reset();
                     return Message.init(self.allocator, encoding, decompressed);
                 }
                 return error.DeflateNotSupported;
@@ -364,7 +380,7 @@ pub fn client(
         .allocator = allocator,
         .reader = reader(allocator, inner_reader, options.per_message_deflate),
         .writer = try writer(allocator, inner_writer),
-        .options = options,
+
         .decompressor = if (options.per_message_deflate)
             try zlib.Decompressor.init(allocator, .{ .header = .ws, .window_size = options.server_max_window_bits })
         else
@@ -373,6 +389,9 @@ pub fn client(
             try zlib.Compressor.init(allocator, .{ .header = .ws, .window_size = options.client_max_window_bits })
         else
             null,
+        .reset_compressor = options.client_no_context_takeover,
+        .reset_decompressor = options.server_no_context_takeover,
+        .compress_threshold = options.compress_threshold,
     };
 }
 
