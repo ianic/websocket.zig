@@ -24,6 +24,10 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    const ws = b.dependency("ws", .{});
+    exe.linkLibrary(ws.artifact("ws"));
+    exe.addModule("ws", ws.module("ws"));
+
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
     // step when running `zig build`).

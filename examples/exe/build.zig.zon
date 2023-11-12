@@ -1,0 +1,11 @@
+.{
+    .name = "example",
+    .version = "0.0.0",
+    .dependencies = .{
+        .ws = .{
+            .url = "https://github.com/ianic/websocket.zig/archive/32709054246138c0685fe9c588ddf9e305a6601f.tar.gz",
+            .hash = "122058ef732f2d10f035e0b803c5735ffc5cd6f0e20339c338a2bea944443cc8d7b7",
+        },
+    },
+    .paths = .{""},
+}
