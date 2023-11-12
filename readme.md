@@ -11,7 +11,7 @@ There is a minimal project in [examples/exe](examples/exe/) which demonstrates
 how to use websocket client. 
 
 * add dependency to ws lib in your [build.zig.zon](examples/exe/build.zig.zon)
-* link library in your [build.zig](examples/exe/build.zig#L27:29)
+* link library in your [build.zig](examples/exe/build.zig#L27:L29)
 
 Then you can `@import("ws")` in [src/main.zig](examples/exe/src/main.zig#L2).
 This example uses public echo ws server at `ws://ws.vi-server.org/mirror/`.
