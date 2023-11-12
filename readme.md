@@ -17,6 +17,19 @@ Then you can `@import("ws")` in [src/main.zig](examples/exe/src/main.zig#L2).
 This example uses public echo ws server at ws://ws.vi-server.org/mirror/.
 Connects to websocket server, sends hello message and prints echoed reply.
 
+Above url is taken from [websocat - curl for WebSocket](https://github.com/vi/websocat) tool.
+
+You can start websocat server locally with for example:
+```sh
+websocat -s 8080
+```
+and then connect to it by changing [hostname, uri, port](examples/exe/src/main.zig#L9:L11) to:
+```Zig
+    const hostname = "localhost";
+    const uri = "ws://localhost/";
+    const port = 8080;
+```
+
 ### References
 
 [The WebSocket Protocol RFC](https://www.rfc-editor.org/rfc/rfc6455)  
