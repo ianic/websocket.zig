@@ -62,7 +62,7 @@ pub const Frame = struct {
         if (self.opcode != .close) return 0;
         if (self.payload.len == 1) return 0; //invalid
         if (self.payload.len == 0) return default_close_code;
-        return mem.readIntBig(u16, self.payload[0..2]);
+        return mem.readInt(u16, self.payload[0..2], .big);
     }
 
     pub fn closePayload(self: *Self) []const u8 {
@@ -165,11 +165,11 @@ pub const Frame = struct {
             offset = 2;
         } else if (payload_bytes == 3) {
             buf[1] += 126;
-            std.mem.writeInt(u16, buf[2..4], @as(u16, @intCast(payload_len)), .Big);
+            std.mem.writeInt(u16, buf[2..4], @as(u16, @intCast(payload_len)), .big);
             offset = 4;
         } else {
             buf[1] += 127;
-            std.mem.writeInt(u64, buf[2..10], payload_len, .Big);
+            std.mem.writeInt(u64, buf[2..10], payload_len, .big);
             offset = 10;
         }
 
@@ -183,7 +183,7 @@ pub const Frame = struct {
         var payload_end = payload_start + self.payload.len;
         if (is_close) {
             const cc = if (close_code == 0) default_close_code else close_code;
-            std.mem.writeIntSliceBig(u16, buf[offset .. offset + 2], cc);
+            std.mem.writeInt(u16, buf[offset .. offset + 2][0..2], cc, .big);
             offset += 2;
             payload_end += 2;
         }

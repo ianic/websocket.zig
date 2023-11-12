@@ -217,7 +217,7 @@ pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
 }
 
 pub fn Reader(comptime ReaderType: type) type {
-    const BitReader = io.BitReader(.Big, ReaderType);
+    const BitReader = io.BitReader(.big, ReaderType);
     return struct {
         bit_reader: BitReader,
         allocator: Allocator,
@@ -228,7 +228,7 @@ pub fn Reader(comptime ReaderType: type) type {
         pub fn init(allocator: Allocator, inner_reader: ReaderType, deflate_supported: bool) Self {
             return .{
                 .allocator = allocator,
-                .bit_reader = io.bitReader(.Big, inner_reader),
+                .bit_reader = io.bitReader(.big, inner_reader),
                 .deflate_supported = deflate_supported,
             };
         }
