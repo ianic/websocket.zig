@@ -43,9 +43,19 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&test_compile.step);
 
     // Build examples.
-    const bin = b.addExecutable(.{
+    var bin = b.addExecutable(.{
         .name = "autobahn_client",
         .root_source_file = .{ .path = "examples/autobahn_client.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    bin.linkLibrary(ws_lib);
+    bin.addModule("ws", ws_module);
+    b.installArtifact(bin);
+
+    bin = b.addExecutable(.{
+        .name = "wss",
+        .root_source_file = .{ .path = "examples/wss.zig" },
         .target = target,
         .optimize = optimize,
     });
