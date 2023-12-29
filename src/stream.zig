@@ -154,7 +154,7 @@ pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
                 defer frame.deinit();
 
                 // append frame.payload  to payload
-                var start = payload.len;
+                const start = payload.len;
                 payload = try self.allocator.realloc(payload, start + frame.payload.len);
                 @memcpy(payload[start..], frame.payload);
 
@@ -241,7 +241,7 @@ pub fn Reader(comptime ReaderType: type) type {
             return try Frame.Opcode.decode(try self.bit_reader.readBitsNoEof(u4, 4));
         }
         inline fn readPayloadLen(self: *Self) !u64 {
-            var payload_len = try self.bit_reader.readBitsNoEof(u64, 7);
+            const payload_len = try self.bit_reader.readBitsNoEof(u64, 7);
             return switch (payload_len) {
                 126 => try self.bit_reader.readBitsNoEof(u64, 8 * 2),
                 127 => try self.bit_reader.readBitsNoEof(u64, 8 * 8),
@@ -260,7 +260,7 @@ pub fn Reader(comptime ReaderType: type) type {
             if (payload_len == 0) return Frame.empty_payload;
             var masking_key = [_]u8{0} ** 4;
             if (masked) try self.readAll(&masking_key);
-            var payload = try self.allocator.alloc(u8, payload_len);
+            const payload = try self.allocator.alloc(u8, payload_len);
             try self.readAll(payload);
             if (masked) Frame.maskUnmask(&masking_key, payload);
             return payload;
@@ -276,7 +276,7 @@ pub fn Reader(comptime ReaderType: type) type {
             const opcode = try self.readOpcode();
             const mask = try self.readBit();
             const payload_len = try self.readPayloadLen();
-            var payload = try self.readPayload(payload_len, mask == 1);
+            const payload = try self.readPayload(payload_len, mask == 1);
 
             var frm = Frame{
                 .fin = fin,
@@ -332,7 +332,7 @@ pub fn Writer(comptime WriterType: type) type {
                 const first_frame = sent_payload == 0;
 
                 var fin: u1 = 1;
-                var rsv1: u1 = if (compressed and first_frame) 1 else 0;
+                const rsv1: u1 = if (compressed and first_frame) 1 else 0;
 
                 // use frame payload that fits into write_buf
                 var frame_payload = payload[sent_payload..];
@@ -565,7 +565,7 @@ test "deflate compress/decompress" {
     defer comp.deinit();
     _ = try comp.write(input);
     try comp.close();
-    var compressed = compressor_stm.items;
+    const compressed = compressor_stm.items;
     //showBuf(compressed);
     try testing.expectEqualSlices(u8, compressed, &[_]u8{ 0xf2, 0x48, 0xcd, 0xc9, 0xc9, 0x07, 0x04, 0x00, 0x00, 0xff, 0xff });
 
@@ -573,7 +573,7 @@ test "deflate compress/decompress" {
     var decomp = try std.compress.deflate.decompressor(allocator, decompressor_stm.reader(), null);
     defer decomp.deinit();
 
-    var decompressed = try decomp.reader().readAllAlloc(allocator, std.math.maxInt(usize));
+    const decompressed = try decomp.reader().readAllAlloc(allocator, std.math.maxInt(usize));
     defer allocator.free(decompressed);
     try testing.expectEqual(input.len, decompressed.len);
     try testing.expectEqualSlices(u8, input, decompressed);
@@ -586,14 +586,14 @@ test "zlib compress/decompress" {
     var cmp = try zlib.Compressor.init(allocator, .{ .header = .none });
     defer cmp.deinit();
 
-    var compressed = try cmp.compressAllAlloc(input);
+    const compressed = try cmp.compressAllAlloc(input);
     defer allocator.free(compressed);
     //showBuf(compressed);
 
     var dcmp = try zlib.Decompressor.init(allocator, .{ .header = .none });
     defer dcmp.deinit();
 
-    var decompressed = try dcmp.decompressAllAlloc(compressed);
+    const decompressed = try dcmp.decompressAllAlloc(compressed);
     defer allocator.free(decompressed);
     try testing.expectEqualSlices(u8, input, decompressed);
 }
