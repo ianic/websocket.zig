@@ -176,7 +176,7 @@ pub const Frame = struct {
         var masking_key = [_]u8{0} ** 4;
         if (masked) {
             masking_key = maskingKey();
-            std.mem.copy(u8, buf[offset .. offset + 4], &masking_key);
+            @memcpy(buf[offset .. offset + 4], &masking_key);
             offset += 4;
         }
         const payload_start = offset;
@@ -187,7 +187,7 @@ pub const Frame = struct {
             offset += 2;
             payload_end += 2;
         }
-        std.mem.copy(u8, buf[offset..], self.payload);
+        @memcpy(buf[offset..], self.payload);
         if (masked)
             maskUnmask(&masking_key, buf[payload_start..payload_end]);
 

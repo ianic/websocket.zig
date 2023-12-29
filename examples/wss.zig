@@ -38,7 +38,7 @@ const Connection = struct {
         const is_wss = mem.eql(u8, uri.scheme, "wss");
         const port: u16 = uri.port orelse if (is_wss) 443 else 80;
 
-        var tcp_stream = try net.tcpConnectToHost(allocator, hostname, port);
+        const tcp_stream = try net.tcpConnectToHost(allocator, hostname, port);
 
         var self = Connection{
             .tcp_stream = tcp_stream,
@@ -117,7 +117,7 @@ const Connection = struct {
         TlsIllegalParameter,
     };
 
-    pub const Reader = std.io.Reader(*Connection, ReadError, read);
+    pub const Reader = std.io.Reader(*Connection, (ReadError || error{SocketNotConnected}), read);
 
     pub fn reader(req: *Connection) Reader {
         return .{ .context = req };
