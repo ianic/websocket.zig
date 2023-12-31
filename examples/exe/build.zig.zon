@@ -3,8 +3,8 @@
     .version = "0.0.0",
     .dependencies = .{
         .ws = .{
-            .url = "https://github.com/ianic/websocket.zig/archive/32709054246138c0685fe9c588ddf9e305a6601f.tar.gz",
-            .hash = "122058ef732f2d10f035e0b803c5735ffc5cd6f0e20339c338a2bea944443cc8d7b7",
+            .url = "https://github.com/ianic/websocket.zig/archive/b8439c87f0bffc28b6d0eeff88d8915c99523bc7.tar.gz",
+            .hash = "1220ccb3090281fe6c8e18b97f23ca02a888aef7b6df0ca710edcb872e4c9ce2b375",
         },
     },
     .paths = .{""},
