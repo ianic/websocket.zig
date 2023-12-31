@@ -52,6 +52,7 @@ const Connection = struct {
             defer ca_bundle.deinit(allocator);
 
             var tls_client = try allocator.create(tls.Client);
+            errdefer allocator.destroy(tls_client);
             tls_client.* = try tls.Client.init(tcp_stream, ca_bundle, hostname);
             tls_client.allow_truncation_attacks = true;
 
