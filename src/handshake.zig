@@ -22,7 +22,7 @@ fn secKey() [24]u8 {
     var buf: [16]u8 = undefined;
     var ret: [24]u8 = undefined;
     rnd.random().bytes(&buf);
-    var encoded = base64Encoder.encode(&ret, &buf);
+    const encoded = base64Encoder.encode(&ret, &buf);
     assert(encoded.len == ret.len);
     return ret;
 }
