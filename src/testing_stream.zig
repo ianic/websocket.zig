@@ -34,7 +34,7 @@ pub fn TestingStream(comptime output_len: usize) type {
             const size = @min(dest.len, self.input.len - self.read_pos);
             const end = self.read_pos + size;
 
-            mem.copy(u8, dest[0..size], self.input[self.read_pos..end]);
+            mem.copyForwards(u8, dest[0..size], self.input[self.read_pos..end]);
             self.read_pos = end;
 
             return size;
@@ -49,7 +49,7 @@ pub fn TestingStream(comptime output_len: usize) type {
             else
                 self.output.len - self.write_pos;
 
-            mem.copy(u8, self.output[self.write_pos .. self.write_pos + n], bytes[0..n]);
+            mem.copyForwards(u8, self.output[self.write_pos .. self.write_pos + n], bytes[0..n]);
             self.write_pos += n;
 
             if (n == 0) return error.NoSpaceLeft;

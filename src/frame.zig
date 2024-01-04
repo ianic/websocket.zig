@@ -187,7 +187,7 @@ pub const Frame = struct {
             offset += 2;
             payload_end += 2;
         }
-        @memcpy(buf[payload_start..payload_end], self.payload);
+        @memcpy(buf[offset .. offset + self.payload.len], self.payload);
         if (masked)
             maskUnmask(&masking_key, buf[payload_start..payload_end]);
 
