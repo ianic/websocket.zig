@@ -3,8 +3,8 @@
     .version = "0.1.0",
     .dependencies = .{
         .zlib = .{
-            .url = "https://github.com/ianic/zig-zlib/archive/a3d6d97bd1bfd027e758d0d6eb36535da8f1d5a7.tar.gz",
-            .hash = "1220d624669f633ebe6c7afaba1a702c05c4c8e55a57b77a4d0d6ab1e3da07db11e2",
+            .url = "https://github.com/nk521/zig-zlib/archive/refs/heads/main.zip",
+            .hash = "1220997a4b8df08cf4ea165ed2a2a138e25c4cfffd5862c40441ae118f07a223b70f",
         },
     },
     .paths = .{""},
