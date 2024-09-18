@@ -561,22 +561,19 @@ test "deflate compress/decompress" {
 
     var compressor_stm = std.ArrayList(u8).init(allocator);
     defer compressor_stm.deinit();
-    var comp = try std.compress.deflate.compressor(allocator, compressor_stm.writer(), .{});
-    defer comp.deinit();
+
+    var comp = try std.compress.flate.compressor(compressor_stm.writer(), .{});
     _ = try comp.write(input);
-    try comp.close();
+    try comp.finish();
     const compressed = compressor_stm.items;
+    var temp = io.fixedBufferStream(compressed);
     //showBuf(compressed);
+
     try testing.expectEqualSlices(u8, compressed, &[_]u8{ 0xf2, 0x48, 0xcd, 0xc9, 0xc9, 0x07, 0x04, 0x00, 0x00, 0xff, 0xff });
 
     var decompressor_stm = io.fixedBufferStream(compressed);
-    var decomp = try std.compress.deflate.decompressor(allocator, decompressor_stm.reader(), null);
-    defer decomp.deinit();
-
-    const decompressed = try decomp.reader().readAllAlloc(allocator, std.math.maxInt(usize));
-    defer allocator.free(decompressed);
-    try testing.expectEqual(input.len, decompressed.len);
-    try testing.expectEqualSlices(u8, input, decompressed);
+    try std.compress.flate.decompress(temp.reader(), decompressor_stm.writer());
+    try testing.expectEqualSlices(u8, input, decompressor_stm.getWritten());
 }
 
 test "zlib compress/decompress" {
