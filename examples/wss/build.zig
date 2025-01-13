@@ -9,15 +9,15 @@ pub fn build(b: *std.Build) void {
     const ws_module = b.dependency("ws", dep_opts).module("ws");
 
     const exe = b.addExecutable(.{
-        .name = "demo",
+        .name = "wss",
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
     exe.root_module.addImport("tls", tls_module);
     exe.root_module.addImport("ws", ws_module);
-
     b.installArtifact(exe);
+
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
     const run_step = b.step("run", "Run the app");
