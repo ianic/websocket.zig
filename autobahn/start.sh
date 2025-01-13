@@ -11,4 +11,4 @@ podman run -it --rm \
     -p 9001:9001 \
     -p 8080:8080 \
     crossbario/autobahn-testsuite:0.8.2 \
-    wstest --mode fuzzingserver --spec /config/functional.json
+    wstest --mode fuzzingserver --spec /config/compression_fast.json

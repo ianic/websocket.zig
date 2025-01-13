@@ -1,7 +1,6 @@
 const std = @import("std");
 const io = std.io;
 const mem = std.mem;
-//const zlib = @import("zlib");
 
 const assert = std.debug.assert;
 const Allocator = mem.Allocator;
@@ -68,6 +67,11 @@ pub const Options = struct {
 
 pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
     return struct {
+        // NOTE: @sizeOf DecompressorType: 76312  CompressorType: 404760
+        const DecompressorType = std.compress.flate.Decompressor(io.FixedBufferStream([]const u8).Reader);
+        const CompressorType = std.compress.flate.Compressor(std.ArrayList(u8).Writer);
+        const Self = @This();
+
         reader: Reader(ReaderType),
         writer: Writer(WriterType),
 
@@ -78,14 +82,21 @@ pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
         last_frame_fragment: Frame.Fragment = .unfragmented,
 
         // message compression
-        // decompressor: ?zlib.Decompressor = null, // not null if per_message_deflate is negotiated
-        // compressor: ?zlib.Compressor = null,
-        // not null if per_message_deflate is negotiated
-        // reset_compressor: bool = false, // true if sliding window is not negotiated
-        // reset_decompressor: bool = false, // true if sliding window is not negotiated
-        compress_threshold: usize = 126, // don't compress tiny payload
+        decompressor: ?*DecompressorType = null, // not null if per_message_deflate is negotiated
+        compressor: ?*CompressorType = null, //     not null if per_message_deflate is negotiated
+        reset_compressor: bool = false, //          true if sliding window is not negotiated
+        reset_decompressor: bool = false, //        true if sliding window is not negotiated
+        compress_threshold: usize = 126, //         don't compress tiny payload
 
-        const Self = @This();
+        fn resetCompressor(self: *Self) void {
+            var dummy = std.ArrayList(u8).init(self.allocator);
+            defer dummy.deinit();
+            self.compressor.?.* = CompressorType.init(dummy.writer(), .{}) catch unreachable;
+        }
+
+        fn resetDecompressor(self: *Self) void {
+            self.decompressor.?.* = .{};
+        }
 
         fn readDataFrame(self: *Self) !Frame {
             while (true) {
@@ -173,18 +184,21 @@ pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
             encoding: Message.Encoding,
             payload: []const u8,
             // prevent payload compression
-            // usefull if payload is of already compressed type, for example jpg
+            // useful if payload is of already compressed type, for example jpg
             no_compress: bool,
         ) !void {
             if (!no_compress and payload.len >= self.compress_threshold) {
-                // if (self.compressor) |*cmp| {
-                //     // send compressed
-                //     const compressed = try cmp.compressAllAlloc(payload);
-                //     defer self.allocator.free(compressed);
-                //     if (self.reset_compressor) try cmp.reset();
-                //     try self.writer.message(encoding, compressed, true);
-                //     return;
-                // }
+                if (self.compressor) |compressor| {
+                    // send compressed
+                    var output = std.ArrayList(u8).init(self.allocator);
+                    defer output.deinit();
+                    compressor.setWriter(output.writer());
+                    _ = try compressor.write(payload);
+                    try compressor.flush();
+                    const compressed = output.items[0 .. output.items.len - 4];
+                    if (self.reset_compressor) self.resetCompressor();
+                    return try self.writer.message(encoding, compressed, true);
+                }
             }
             try self.writer.message(encoding, payload, false);
             return;
@@ -197,21 +211,41 @@ pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
             payload_compressed: bool,
         ) !Message {
             if (payload_compressed) {
-                // if (self.decompressor) |*dcp| {
-                //     defer self.allocator.free(payload);
-                //     const decompressed = try dcp.decompressAllAlloc(payload);
-                //     errdefer self.allocator.free(decompressed);
-                //     if (self.reset_decompressor) try dcp.reset();
-                //     return Message.init(self.allocator, encoding, decompressed);
-                // }
+                if (self.decompressor) |decompressor| {
+                    defer self.allocator.free(payload);
+
+                    var output = std.ArrayList(u8).init(self.allocator);
+                    defer output.deinit();
+
+                    // push payload to decompressor
+                    var input = io.fixedBufferStream(payload);
+                    decompressor.setReader(input.reader());
+                    decompressor.decompress(output.writer()) catch |err| switch (err) {
+                        error.EndOfStream => {},
+                        else => return err,
+                    };
+                    // add empty stored block
+                    input = io.fixedBufferStream(&[_]u8{ 0x00, 0x00, 0xff, 0xff });
+                    decompressor.setReader(input.reader());
+                    decompressor.decompress(output.writer()) catch |err| switch (err) {
+                        error.EndOfStream => {},
+                        else => return err,
+                    };
+
+                    if (self.reset_decompressor) self.resetDecompressor();
+                    return Message.init(self.allocator, encoding, try output.toOwnedSlice());
+                }
+
                 return error.DeflateNotSupported;
             }
             return Message.init(self.allocator, encoding, payload);
         }
 
         pub fn deinit(self: *Self) void {
-            // if (self.compressor) |*cmp| cmp.deinit();
-            // if (self.decompressor) |*dcmp| dcmp.deinit();
+            if (self.compressor) |compressor|
+                self.allocator.destroy(compressor);
+            if (self.decompressor) |decompressor|
+                self.allocator.destroy(decompressor);
             self.writer.deinit();
         }
     };
@@ -377,23 +411,23 @@ pub fn client(
     inner_writer: anytype,
     options: Options,
 ) !Stream(@TypeOf(inner_reader), @TypeOf(inner_writer)) {
-    return .{
+    const S = Stream(@TypeOf(inner_reader), @TypeOf(inner_writer));
+    var stream = S{
         .allocator = allocator,
         .reader = reader(allocator, inner_reader, options.per_message_deflate),
         .writer = try writer(allocator, inner_writer),
-
-        // .decompressor = if (options.per_message_deflate)
-        //     try zlib.Decompressor.init(allocator, .{ .header = .ws, .window_size = options.server_max_window_bits })
-        // else
-        //     null,
-        // .compressor = if (options.per_message_deflate)
-        //     try zlib.Compressor.init(allocator, .{ .header = .ws, .window_size = options.client_max_window_bits })
-        // else
-        //     null,
-        //.reset_compressor = options.client_no_context_takeover,
-        //.reset_decompressor = options.server_no_context_takeover,
+        .reset_compressor = options.client_no_context_takeover,
+        .reset_decompressor = options.server_no_context_takeover,
         .compress_threshold = options.compress_threshold,
     };
+    if (options.per_message_deflate) {
+        // NOTE: options.server_max_window_bits not used because not supported by std lib
+        stream.compressor = try allocator.create(S.CompressorType);
+        stream.decompressor = try allocator.create(S.DecompressorType);
+        stream.resetCompressor();
+        stream.resetDecompressor();
+    }
+    return stream;
 }
 
 const testing = std.testing;
@@ -556,45 +590,81 @@ fn showBuf(buf: []const u8) void {
     std.debug.print("\n", .{});
 }
 
-// test "deflate compress/decompress" {
-//     const allocator = testing.allocator;
-//     const input = "Hello";
+test "deflate compress/decompress" {
+    const allocator = testing.allocator;
+    const text = "Hello";
 
-//     var compressor_stm = std.ArrayList(u8).init(allocator);
-//     defer compressor_stm.deinit();
-//     var comp = try std.compress.deflate.compressor(allocator, compressor_stm.writer(), .{});
-//     defer comp.deinit();
-//     _ = try comp.write(input);
-//     try comp.close();
-//     const compressed = compressor_stm.items;
-//     //showBuf(compressed);
-//     try testing.expectEqualSlices(u8, compressed, &[_]u8{ 0xf2, 0x48, 0xcd, 0xc9, 0xc9, 0x07, 0x04, 0x00, 0x00, 0xff, 0xff });
+    const DecompressorType = std.compress.flate.Decompressor(io.FixedBufferStream([]const u8).Reader);
+    var decompressor: DecompressorType = .{};
 
-//     var decompressor_stm = io.fixedBufferStream(compressed);
-//     var decomp = try std.compress.deflate.decompressor(allocator, decompressor_stm.reader(), null);
-//     defer decomp.deinit();
+    const CompressorType = std.compress.flate.Compressor(std.ArrayList(u8).Writer);
+    var compressor = brk: {
+        var dummy = std.ArrayList(u8).init(allocator);
+        defer dummy.deinit();
+        break :brk try CompressorType.init(dummy.writer(), .{});
+    };
 
-//     const decompressed = try decomp.reader().readAllAlloc(allocator, std.math.maxInt(usize));
-//     defer allocator.free(decompressed);
-//     try testing.expectEqual(input.len, decompressed.len);
-//     try testing.expectEqualSlices(u8, input, decompressed);
-// }
+    for (0..128) |i| {
+        if (i % 5 == 0) {
+            decompressor = .{};
+            compressor = brk: {
+                var dummy = std.ArrayList(u8).init(allocator);
+                defer dummy.deinit();
+                break :brk try CompressorType.init(dummy.writer(), .{});
+            };
+        }
 
-// test "zlib compress/decompress" {
-//     const allocator = testing.allocator;
-//     const input = "Hello";
+        const compressed: []const u8 = brk: {
+            var output = std.ArrayList(u8).init(allocator);
+            defer output.deinit();
+            compressor.setWriter(output.writer());
 
-//     var cmp = try zlib.Compressor.init(allocator, .{ .header = .none });
-//     defer cmp.deinit();
+            _ = try compressor.write(text);
+            try compressor.flush();
+            break :brk try output.toOwnedSlice();
+        };
+        defer allocator.free(compressed);
 
-//     const compressed = try cmp.compressAllAlloc(input);
-//     defer allocator.free(compressed);
-//     //showBuf(compressed);
+        if (i % 5 == 0) {
+            try testing.expectEqualSlices(
+                u8,
+                compressed,
+                &[_]u8{ 0xf2, 0x48, 0xcd, 0xc9, 0xc9, 0x07, 0x00, 0x00, 0x00, 0xff, 0xff },
+            );
+        }
+        // std.debug.print("compressed {}: {x}\n", .{ compressed.len, compressed });
+        {
+            var output = std.ArrayList(u8).init(allocator);
+            defer output.deinit();
 
-//     var dcmp = try zlib.Decompressor.init(allocator, .{ .header = .none });
-//     defer dcmp.deinit();
+            // on wire we remove last 4 bytes
+            var input = io.fixedBufferStream(compressed[0 .. compressed.len - 4]);
+            decompressor.setReader(input.reader());
+            decompressor.decompress(output.writer()) catch |err| switch (err) {
+                error.EndOfStream => {},
+                else => return err,
+            };
+            // add empty stored block
+            input = io.fixedBufferStream(&[_]u8{ 0x00, 0x00, 0xff, 0xff });
+            decompressor.setReader(input.reader());
+            decompressor.decompress(output.writer()) catch |err| switch (err) {
+                error.EndOfStream => {},
+                else => return err,
+            };
 
-//     const decompressed = try dcmp.decompressAllAlloc(compressed);
-//     defer allocator.free(decompressed);
-//     try testing.expectEqualSlices(u8, input, decompressed);
-// }
+            const decompressed = output.items;
+            try testing.expectEqualSlices(u8, text, decompressed);
+        }
+    }
+}
+
+test "size" {
+    const F = io.FixedBufferStream([]u8);
+    const S = Stream(F.Reader, F.Writer);
+    std.debug.print("size of Stream: {}\n", .{@sizeOf(S)});
+
+    const DecompressorType = std.compress.flate.Decompressor(io.FixedBufferStream([]const u8).Reader);
+    const CompressorType = std.compress.flate.Compressor(std.ArrayList(u8).Writer);
+    std.debug.print("size of DecompressorType: {}\n", .{@sizeOf(DecompressorType)});
+    std.debug.print("size of CompressorType: {}\n", .{@sizeOf(CompressorType)});
+}

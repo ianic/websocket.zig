@@ -1,6 +1,6 @@
 #!/bin/bash -e
 
-zig build -freference-trace -Doptimize=ReleaseSafe
+zig build -freference-trace -Doptimize=ReleaseFast
 #zig build -freference-trace
 
 url=ws://localhost:9001
