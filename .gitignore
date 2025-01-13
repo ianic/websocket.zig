@@ -2,3 +2,4 @@ zig-cache/
 zig-out/
 autobahn/reports
 .vscode
+/.zig-cache/

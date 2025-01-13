@@ -12,7 +12,7 @@ const Options = @import("stream.zig").Options;
 
 const WS_MAGIC_KEY = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 var base64Encoder = std.base64.standard.Encoder;
-var rnd = std.rand.DefaultPrng.init(0);
+var rnd = std.Random.DefaultPrng.init(0);
 
 fn secKey() [24]u8 {
     if (builtin.is_test) {
@@ -135,7 +135,7 @@ pub fn Client(comptime ReaderType: type, comptime WriterType: type) type {
             }
 
             pub fn paramValue(h: Header, param: []const u8) ?[]const u8 {
-                var it = std.mem.tokenize(u8, h.value, ";= ");
+                var it = std.mem.tokenizeAny(u8, h.value, ";= ");
                 while (it.next()) |k| {
                     if (ascii.eqlIgnoreCase(k, param)) {
                         if (it.next()) |v| {

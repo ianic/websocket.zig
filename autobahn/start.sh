@@ -1,10 +1,10 @@
-#!/usr/bin/env bash -e
+#!/bin/bash -e
 
-docker stop fuzzingserver || true
+podman stop fuzzingserver || true
 
 mkdir -p reports/clients
 
-docker run -it --rm \
+podman run -it --rm \
     -v "${PWD}/config:/config" \
     -v "${PWD}/reports:/reports" \
     --name fuzzingserver \

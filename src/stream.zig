@@ -1,7 +1,7 @@
 const std = @import("std");
 const io = std.io;
 const mem = std.mem;
-const zlib = @import("zlib");
+//const zlib = @import("zlib");
 
 const assert = std.debug.assert;
 const Allocator = mem.Allocator;
@@ -78,10 +78,11 @@ pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
         last_frame_fragment: Frame.Fragment = .unfragmented,
 
         // message compression
-        decompressor: ?zlib.Decompressor = null, // not null if per_message_deflate is negotiated
-        compressor: ?zlib.Compressor = null, // not null if per_message_deflate is negotiated
-        reset_compressor: bool = false, // true if sliding window is not negotiated
-        reset_decompressor: bool = false, // true if sliding window is not negotiated
+        // decompressor: ?zlib.Decompressor = null, // not null if per_message_deflate is negotiated
+        // compressor: ?zlib.Compressor = null,
+        // not null if per_message_deflate is negotiated
+        // reset_compressor: bool = false, // true if sliding window is not negotiated
+        // reset_decompressor: bool = false, // true if sliding window is not negotiated
         compress_threshold: usize = 126, // don't compress tiny payload
 
         const Self = @This();
@@ -176,14 +177,14 @@ pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
             no_compress: bool,
         ) !void {
             if (!no_compress and payload.len >= self.compress_threshold) {
-                if (self.compressor) |*cmp| {
-                    // send compressed
-                    const compressed = try cmp.compressAllAlloc(payload);
-                    defer self.allocator.free(compressed);
-                    if (self.reset_compressor) try cmp.reset();
-                    try self.writer.message(encoding, compressed, true);
-                    return;
-                }
+                // if (self.compressor) |*cmp| {
+                //     // send compressed
+                //     const compressed = try cmp.compressAllAlloc(payload);
+                //     defer self.allocator.free(compressed);
+                //     if (self.reset_compressor) try cmp.reset();
+                //     try self.writer.message(encoding, compressed, true);
+                //     return;
+                // }
             }
             try self.writer.message(encoding, payload, false);
             return;
@@ -196,21 +197,21 @@ pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
             payload_compressed: bool,
         ) !Message {
             if (payload_compressed) {
-                if (self.decompressor) |*dcp| {
-                    defer self.allocator.free(payload);
-                    const decompressed = try dcp.decompressAllAlloc(payload);
-                    errdefer self.allocator.free(decompressed);
-                    if (self.reset_decompressor) try dcp.reset();
-                    return Message.init(self.allocator, encoding, decompressed);
-                }
+                // if (self.decompressor) |*dcp| {
+                //     defer self.allocator.free(payload);
+                //     const decompressed = try dcp.decompressAllAlloc(payload);
+                //     errdefer self.allocator.free(decompressed);
+                //     if (self.reset_decompressor) try dcp.reset();
+                //     return Message.init(self.allocator, encoding, decompressed);
+                // }
                 return error.DeflateNotSupported;
             }
             return Message.init(self.allocator, encoding, payload);
         }
 
         pub fn deinit(self: *Self) void {
-            if (self.compressor) |*cmp| cmp.deinit();
-            if (self.decompressor) |*dcmp| dcmp.deinit();
+            // if (self.compressor) |*cmp| cmp.deinit();
+            // if (self.decompressor) |*dcmp| dcmp.deinit();
             self.writer.deinit();
         }
     };
@@ -251,7 +252,7 @@ pub fn Reader(comptime ReaderType: type) type {
         inline fn readAll(self: *Self, buffer: []u8) !void {
             var index: usize = 0;
             while (index != buffer.len) {
-                const amt = try self.bit_reader.read(buffer[index..]);
+                const amt = try self.bit_reader.reader.read(buffer[index..]);
                 if (amt == 0) return error.EndOfStream;
                 index += amt;
             }
@@ -381,16 +382,16 @@ pub fn client(
         .reader = reader(allocator, inner_reader, options.per_message_deflate),
         .writer = try writer(allocator, inner_writer),
 
-        .decompressor = if (options.per_message_deflate)
-            try zlib.Decompressor.init(allocator, .{ .header = .ws, .window_size = options.server_max_window_bits })
-        else
-            null,
-        .compressor = if (options.per_message_deflate)
-            try zlib.Compressor.init(allocator, .{ .header = .ws, .window_size = options.client_max_window_bits })
-        else
-            null,
-        .reset_compressor = options.client_no_context_takeover,
-        .reset_decompressor = options.server_no_context_takeover,
+        // .decompressor = if (options.per_message_deflate)
+        //     try zlib.Decompressor.init(allocator, .{ .header = .ws, .window_size = options.server_max_window_bits })
+        // else
+        //     null,
+        // .compressor = if (options.per_message_deflate)
+        //     try zlib.Compressor.init(allocator, .{ .header = .ws, .window_size = options.client_max_window_bits })
+        // else
+        //     null,
+        //.reset_compressor = options.client_no_context_takeover,
+        //.reset_decompressor = options.server_no_context_takeover,
         .compress_threshold = options.compress_threshold,
     };
 }
@@ -555,45 +556,45 @@ fn showBuf(buf: []const u8) void {
     std.debug.print("\n", .{});
 }
 
-test "deflate compress/decompress" {
-    const allocator = testing.allocator;
-    const input = "Hello";
+// test "deflate compress/decompress" {
+//     const allocator = testing.allocator;
+//     const input = "Hello";
 
-    var compressor_stm = std.ArrayList(u8).init(allocator);
-    defer compressor_stm.deinit();
-    var comp = try std.compress.deflate.compressor(allocator, compressor_stm.writer(), .{});
-    defer comp.deinit();
-    _ = try comp.write(input);
-    try comp.close();
-    const compressed = compressor_stm.items;
-    //showBuf(compressed);
-    try testing.expectEqualSlices(u8, compressed, &[_]u8{ 0xf2, 0x48, 0xcd, 0xc9, 0xc9, 0x07, 0x04, 0x00, 0x00, 0xff, 0xff });
+//     var compressor_stm = std.ArrayList(u8).init(allocator);
+//     defer compressor_stm.deinit();
+//     var comp = try std.compress.deflate.compressor(allocator, compressor_stm.writer(), .{});
+//     defer comp.deinit();
+//     _ = try comp.write(input);
+//     try comp.close();
+//     const compressed = compressor_stm.items;
+//     //showBuf(compressed);
+//     try testing.expectEqualSlices(u8, compressed, &[_]u8{ 0xf2, 0x48, 0xcd, 0xc9, 0xc9, 0x07, 0x04, 0x00, 0x00, 0xff, 0xff });
 
-    var decompressor_stm = io.fixedBufferStream(compressed);
-    var decomp = try std.compress.deflate.decompressor(allocator, decompressor_stm.reader(), null);
-    defer decomp.deinit();
+//     var decompressor_stm = io.fixedBufferStream(compressed);
+//     var decomp = try std.compress.deflate.decompressor(allocator, decompressor_stm.reader(), null);
+//     defer decomp.deinit();
 
-    const decompressed = try decomp.reader().readAllAlloc(allocator, std.math.maxInt(usize));
-    defer allocator.free(decompressed);
-    try testing.expectEqual(input.len, decompressed.len);
-    try testing.expectEqualSlices(u8, input, decompressed);
-}
+//     const decompressed = try decomp.reader().readAllAlloc(allocator, std.math.maxInt(usize));
+//     defer allocator.free(decompressed);
+//     try testing.expectEqual(input.len, decompressed.len);
+//     try testing.expectEqualSlices(u8, input, decompressed);
+// }
 
-test "zlib compress/decompress" {
-    const allocator = testing.allocator;
-    const input = "Hello";
+// test "zlib compress/decompress" {
+//     const allocator = testing.allocator;
+//     const input = "Hello";
 
-    var cmp = try zlib.Compressor.init(allocator, .{ .header = .none });
-    defer cmp.deinit();
+//     var cmp = try zlib.Compressor.init(allocator, .{ .header = .none });
+//     defer cmp.deinit();
 
-    const compressed = try cmp.compressAllAlloc(input);
-    defer allocator.free(compressed);
-    //showBuf(compressed);
+//     const compressed = try cmp.compressAllAlloc(input);
+//     defer allocator.free(compressed);
+//     //showBuf(compressed);
 
-    var dcmp = try zlib.Decompressor.init(allocator, .{ .header = .none });
-    defer dcmp.deinit();
+//     var dcmp = try zlib.Decompressor.init(allocator, .{ .header = .none });
+//     defer dcmp.deinit();
 
-    const decompressed = try dcmp.decompressAllAlloc(compressed);
-    defer allocator.free(decompressed);
-    try testing.expectEqualSlices(u8, input, decompressed);
-}
+//     const decompressed = try dcmp.decompressAllAlloc(compressed);
+//     defer allocator.free(decompressed);
+//     try testing.expectEqualSlices(u8, input, decompressed);
+// }

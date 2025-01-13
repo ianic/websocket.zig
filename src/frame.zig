@@ -5,7 +5,7 @@ const assert = std.debug.assert;
 const Allocator = mem.Allocator;
 const utf8ValidateSlice = std.unicode.utf8ValidateSlice;
 
-var rnd = std.rand.DefaultPrng.init(0);
+var rnd = std.Random.DefaultPrng.init(0);
 
 pub const Error = error{
     ReservedOpcode,

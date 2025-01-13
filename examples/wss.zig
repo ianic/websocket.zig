@@ -34,7 +34,7 @@ const Connection = struct {
 
     pub fn init(allocator: mem.Allocator, url: []const u8) !Connection {
         const uri = try std.Uri.parse(url);
-        const hostname = uri.host.?;
+        const hostname = uri.host.?.raw;
         const is_wss = mem.eql(u8, uri.scheme, "wss");
         const port: u16 = uri.port orelse if (is_wss) 443 else 80;
 
