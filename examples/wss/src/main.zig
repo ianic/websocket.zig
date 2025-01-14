@@ -36,9 +36,11 @@ pub fn main() !void {
     try cli.send(.text, payload, true);
 
     // Show incoming messages
-    while (cli.nextMessage()) |msg| {
+    var i: usize = 0;
+    while (cli.nextMessage()) |msg| : (i += 1) {
         defer msg.deinit();
-        std.debug.print("{s}", .{msg.payload});
+        //std.debug.print("{s}\n", .{msg.payload});
+        std.debug.print("{} {}\n", .{ i, msg.payload.len });
     }
     if (cli.err) |err| return err;
 }

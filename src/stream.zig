@@ -16,10 +16,15 @@ pub const Message = struct {
         pub fn opcode(self: Encoding) Frame.Opcode {
             return if (self == .text) Frame.Opcode.text else Frame.Opcode.binary;
         }
+
+        pub fn from(frame_opcode: Frame.Opcode) Encoding {
+            return if (frame_opcode == .binary) .binary else .text;
+        }
     };
 
     encoding: Encoding = .text,
     payload: []const u8,
+    compressed: bool = false,
     allocator: ?Allocator = null,
 
     const Self = @This();
@@ -38,9 +43,16 @@ pub const Message = struct {
         if (self.allocator) |a| a.free(self.payload);
     }
 
-    fn validate(self: Self) !void {
+    pub fn validate(self: Self) !void {
         if (self.encoding == .text)
             try Frame.assertValidUtf8(self.payload);
+    }
+
+    pub fn append(self: *Self, data: []const u8) !void {
+        const old_len = self.payload.len;
+        const payload = try self.allocator.?.realloc(@constCast(self.payload), old_len + data.len);
+        @memcpy(payload[old_len..], data);
+        self.payload = payload;
     }
 };
 
@@ -141,7 +153,7 @@ pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
             var frame = try self.readDataFrame();
 
             // get encoding and compressed from first frame
-            const encoding: Message.Encoding = if (frame.opcode == .binary) .binary else .text;
+            const encoding = Message.Encoding.from(frame.opcode);
             const compressed = frame.isCompressed();
 
             if (frame.isFin()) {
