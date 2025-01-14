@@ -268,14 +268,13 @@ pub fn Reader(comptime ReaderType: type) type {
             };
         }
 
-        // TODO does all this inlines make sense
-        inline fn readBit(self: *Self) !u1 {
+        fn readBit(self: *Self) !u1 {
             return try self.bit_reader.readBitsNoEof(u1, 1);
         }
-        inline fn readOpcode(self: *Self) !Frame.Opcode {
+        fn readOpcode(self: *Self) !Frame.Opcode {
             return try Frame.Opcode.decode(try self.bit_reader.readBitsNoEof(u4, 4));
         }
-        inline fn readPayloadLen(self: *Self) !u64 {
+        fn readPayloadLen(self: *Self) !u64 {
             const payload_len = try self.bit_reader.readBitsNoEof(u64, 7);
             return switch (payload_len) {
                 126 => try self.bit_reader.readBitsNoEof(u64, 8 * 2),
@@ -283,7 +282,7 @@ pub fn Reader(comptime ReaderType: type) type {
                 else => payload_len,
             };
         }
-        inline fn readAll(self: *Self, buffer: []u8) !void {
+        fn readAll(self: *Self, buffer: []u8) !void {
             var index: usize = 0;
             while (index != buffer.len) {
                 const amt = try self.bit_reader.reader.read(buffer[index..]);
@@ -291,8 +290,8 @@ pub fn Reader(comptime ReaderType: type) type {
                 index += amt;
             }
         }
-        inline fn readPayload(self: *Self, payload_len: u64, masked: bool) ![]u8 {
-            if (payload_len == 0) return Frame.empty_payload;
+        fn readPayload(self: *Self, payload_len: u64, masked: bool) ![]u8 {
+            if (payload_len == 0) return &.{};
             var masking_key = [_]u8{0} ** 4;
             if (masked) try self.readAll(&masking_key);
             const payload = try self.allocator.alloc(u8, payload_len);

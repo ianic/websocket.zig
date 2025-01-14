@@ -45,7 +45,6 @@ pub const Frame = struct {
     };
 
     pub const max_header = 14; // 1 + 9 + 4 (flags|opcode + mask|payload_len + masking_key)
-    pub const empty_payload = &[_]u8{};
 
     fin: u1,
     rsv1: u1 = 0,
