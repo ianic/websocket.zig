@@ -80,9 +80,10 @@ pub const Frame = struct {
         };
     }
 
-    pub fn assertValid(self: Self) !void {
+    pub fn assertValid(self: Self, deflate_supported: bool) !void {
         if (self.isControl()) try self.assertValidControl();
         if (self.opcode == .close) try self.assertValidClose();
+        if (self.rsv1 == 1 and !deflate_supported) return Error.DeflateNotSupported;
     }
 
     fn assertValidClose(self: Self) !void {
@@ -218,8 +219,7 @@ pub const Frame = struct {
             buf[i] = c ^ mask[i % 4];
     }
 
-    pub fn assertRsvBits(rsv1: u1, rsv2: u1, rsv3: u1, deflate_supported: bool) !void {
-        if (rsv1 == 1 and !deflate_supported) return Error.DeflateNotSupported;
+    pub fn assertRsvBits(rsv2: u1, rsv3: u1) !void {
         if (rsv2 == 1 or rsv3 == 1) return Error.ReservedRsv;
     }
 
@@ -239,14 +239,14 @@ pub const Frame = struct {
         const opcode = try Frame.Opcode.decode(@intCast(data[0] & 0b0000_1111));
         const mask: u1 = readBit(data[1], 0b1000_0000);
 
-        const payload_len, const n = try readPayloadLen(data[1..]);
+        const payload_len, const payload_len_bytes = try readPayloadLen(data[1..]);
 
         if (opcode.isControl()) {
             if (payload_len > 125) return Error.TooBigPayloadForControlFrame;
             if (fin == 0) return Error.FragmentedControlFrame;
         }
 
-        const mask_start = n + 1;
+        const mask_start = payload_len_bytes + 1;
         const mask_end: usize = mask_start + @as(usize, if (mask == 1) 4 else 0);
         const payload_start = mask_end;
         const payload_end = payload_start + payload_len;

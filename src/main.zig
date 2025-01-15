@@ -108,6 +108,10 @@ pub const asyn = struct {
             pub fn send(self: *Self, bytes: []const u8) !void {
                 try self.conn.send(bytes);
             }
+
+            pub fn sendMsg(self: *Self, msg: Message) !void {
+                try self.conn.sendMsg(msg);
+            }
         };
     }
 
@@ -146,13 +150,12 @@ pub const asyn = struct {
                 var n: usize = 0;
                 while (n < bytes.len) {
                     const frm, const frm_len = Frame.parse(bytes[n..]) catch |err| switch (err) {
-                        error.SplitBuffer => return 0,
+                        error.SplitBuffer => return n,
                         else => return err,
                     };
-                    try frm.assertValid();
+                    try frm.assertValid(false); // TODO deflate
                     if (frm.opcode.isControl()) {
-                        // TODO
-                        // try self.child.onControlFrame(frm);
+                        try self.recvControlFrame(frm);
                     } else {
                         try self.recvFrame(frm);
                     }
@@ -162,9 +165,26 @@ pub const asyn = struct {
             }
 
             pub fn send(self: *Self, bytes: []const u8) !void {
-                const frame = Frame{ .fin = 1, .rsv1 = 0, .opcode = .text, .payload = bytes, .mask = 1 };
+                try self.sendFrame(.{
+                    .fin = 1,
+                    .opcode = .text,
+                    .payload = bytes,
+                    .mask = 1,
+                }, 0);
+            }
+
+            pub fn sendMsg(self: *Self, msg: Message) !void {
+                try self.sendFrame(.{
+                    .fin = 1,
+                    .opcode = msg.encoding.opcode(),
+                    .payload = msg.payload,
+                    .mask = 1,
+                }, 0);
+            }
+
+            fn sendFrame(self: *Self, frame: Frame, close_code: u16) !void {
                 const buf = try self.allocator.alloc(u8, frame.encodedLen());
-                _ = frame.encode(buf, 0);
+                _ = frame.encode(buf, close_code);
                 try self.downstream.sendZc(buf);
             }
 
@@ -210,6 +230,28 @@ pub const asyn = struct {
                         self.upstream.onMessage(msg.*);
                     },
                 }
+            }
+
+            fn recvControlFrame(self: *Self, frm: Frame) !void {
+                switch (frm.opcode) {
+                    .ping => try self.pong(frm.payload),
+                    .close => {
+                        try self.close(frm.closeCode(), frm.closePayload());
+                        return error.EndOfStream;
+                    },
+                    .pong => {},
+                    else => unreachable,
+                }
+            }
+
+            fn pong(self: *Self, payload: []const u8) !void {
+                assert(payload.len < 126);
+                try self.sendFrame(.{ .fin = 1, .opcode = .pong, .payload = payload, .mask = 1 }, 0);
+            }
+
+            pub fn close(self: *Self, close_code: u16, payload: []const u8) !void {
+                assert(payload.len < 124);
+                try self.sendFrame(.{ .fin = 1, .opcode = .close, .payload = payload, .mask = 1 }, close_code);
             }
         };
     }

@@ -317,7 +317,7 @@ pub fn Reader(comptime ReaderType: type) type {
             const rsv1 = try self.readBit();
             const rsv2 = try self.readBit();
             const rsv3 = try self.readBit();
-            try Frame.assertRsvBits(rsv1, rsv2, rsv3, self.deflate_supported);
+            try Frame.assertRsvBits(rsv2, rsv3);
 
             const opcode = try self.readOpcode();
             const mask = try self.readBit();
@@ -333,7 +333,7 @@ pub fn Reader(comptime ReaderType: type) type {
                 .allocator = if (payload.len > 0) self.allocator else null,
             };
             errdefer frm.deinit();
-            try frm.assertValid();
+            try frm.assertValid(self.deflate_supported);
             return frm;
         }
     };
