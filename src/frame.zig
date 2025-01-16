@@ -260,16 +260,7 @@ pub const Frame = struct {
         }
 
         return .{
-            .{
-                .fin = fin,
-                .rsv1 = rsv1,
-                //.rsv2 = rsv2,
-                //.rsv3 = rsv3,
-                .mask = mask,
-                .opcode = opcode,
-                //.masking_key = masking_key,
-                .payload = payload,
-            },
+            .{ .fin = fin, .rsv1 = rsv1, .mask = mask, .opcode = opcode, .payload = payload },
             payload_end,
         };
     }
