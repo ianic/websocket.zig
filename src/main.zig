@@ -34,8 +34,8 @@ pub const asyn = struct {
             const Self = @This();
 
             allocator: std.mem.Allocator,
-            upstream: Upstream,
-            downstream: Downstream,
+            upstream: *Upstream,
+            downstream: *Downstream,
             uri: []const u8,
             opt: Options = .{},
             handshake: ?*HandshakeType = null,
@@ -43,8 +43,8 @@ pub const asyn = struct {
 
             pub fn init(
                 allocator: std.mem.Allocator,
-                upstream: Upstream,
-                downstream: Downstream,
+                upstream: *Upstream,
+                downstream: *Downstream,
                 uri: []const u8,
             ) Self {
                 return .{
@@ -124,16 +124,16 @@ pub const asyn = struct {
             const Self = @This();
 
             allocator: mem.Allocator,
-            upstream: Upstream,
-            downstream: Downstream,
+            upstream: *Upstream,
+            downstream: *Downstream,
 
             last_frame_fragment: Frame.Fragment = .unfragmented,
             message: ?Message = null,
 
             pub fn init(
                 allocator: mem.Allocator,
-                upstream: Upstream,
-                downstream: Downstream,
+                upstream: *Upstream,
+                downstream: *Downstream,
             ) Self {
                 return .{
                     .allocator = allocator,
