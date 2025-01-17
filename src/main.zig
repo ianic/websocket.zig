@@ -1,8 +1,16 @@
 const std = @import("std");
+const mem = std.mem;
+const assert = std.debug.assert;
+const testing = std.testing;
 
 pub const handshake = @import("handshake.zig");
 pub const stream = @import("stream.zig");
 pub const Message = stream.Message;
+
+pub const Msg = struct {
+    encoding: Message.Encoding = .text,
+    data: []const u8,
+};
 
 pub fn client(
     allocator: std.mem.Allocator,
@@ -22,9 +30,12 @@ test {
 }
 
 const Options = @import("stream.zig").Options;
+const Frame = @import("frame.zig").Frame;
 
 pub const asyn = struct {
-    pub fn Client(comptime Upstream: type, comptime Downstream: type) type {
+    // Handler: upstream application handler
+    // Transport: downstream transport protocol
+    pub fn Client(comptime Handler: type, comptime Transport: type) type {
         const HandshakeType = handshake.Client(
             std.io.FixedBufferStream([]u8).Reader,
             std.ArrayList(u8).Writer,
@@ -34,25 +45,25 @@ pub const asyn = struct {
             const Self = @This();
 
             allocator: std.mem.Allocator,
-            upstream: *Upstream,
-            downstream: *Downstream,
+            handler: *Handler,
+            transport: *Transport,
             uri: []const u8,
             opt: Options = .{},
             handshake: ?*HandshakeType = null,
-            conn: Conn(Upstream, Downstream),
+            conn: Conn(Handler, Transport),
 
             pub fn init(
                 allocator: std.mem.Allocator,
-                upstream: *Upstream,
-                downstream: *Downstream,
+                handler: *Handler,
+                transport: *Transport,
                 uri: []const u8,
             ) Self {
                 return .{
                     .allocator = allocator,
-                    .upstream = upstream,
-                    .downstream = downstream,
+                    .handler = handler,
+                    .transport = transport,
                     .uri = uri,
-                    .conn = Conn(Upstream, Downstream).init(allocator, upstream, downstream),
+                    .conn = Conn(Handler, Transport).init(allocator, handler, transport),
                 };
             }
 
@@ -78,7 +89,9 @@ pub const asyn = struct {
                 self.handshake = hs;
 
                 try hs.writeRequest(self.uri);
-                try self.downstream.sendZc(try list.toOwnedSlice());
+                const buf = try list.toOwnedSlice();
+                errdefer self.allocator.free(buf);
+                try self.transport.sendZc(buf);
             }
 
             pub fn onSend(self: *Self, buf: []const u8) void {
@@ -99,46 +112,38 @@ pub const asyn = struct {
                     self.allocator.destroy(hs);
                     self.handshake = null;
 
-                    self.upstream.onConnect();
+                    self.handler.onConnect();
                     return n + try self.conn.recv(bytes[n..]);
                 }
                 return try self.conn.recv(bytes);
             }
 
-            pub fn send(self: *Self, bytes: []const u8) !void {
-                try self.conn.send(bytes);
-            }
-
-            pub fn sendMsg(self: *Self, msg: Message) !void {
-                try self.conn.sendMsg(msg);
+            pub fn send(self: *Self, msg: Msg) !void {
+                try self.conn.send(msg);
             }
         };
     }
 
-    const Frame = @import("frame.zig").Frame;
-    const mem = std.mem;
-    const assert = std.debug.assert;
-
-    pub fn Conn(comptime Upstream: type, comptime Downstream: type) type {
+    pub fn Conn(comptime Handler: type, comptime Transport: type) type {
         return struct {
             const Self = @This();
 
             allocator: mem.Allocator,
-            upstream: *Upstream,
-            downstream: *Downstream,
+            handler: *Handler,
+            transport: *Transport,
 
             last_frame_fragment: Frame.Fragment = .unfragmented,
             message: ?Message = null,
 
             pub fn init(
                 allocator: mem.Allocator,
-                upstream: *Upstream,
-                downstream: *Downstream,
+                handler: *Handler,
+                transport: *Transport,
             ) Self {
                 return .{
                     .allocator = allocator,
-                    .upstream = upstream,
-                    .downstream = downstream,
+                    .handler = handler,
+                    .transport = transport,
                 };
             }
 
@@ -164,28 +169,20 @@ pub const asyn = struct {
                 return n;
             }
 
-            pub fn send(self: *Self, bytes: []const u8) !void {
-                try self.sendFrame(.{
-                    .fin = 1,
-                    .opcode = .text,
-                    .payload = bytes,
-                    .mask = 1,
-                }, 0);
-            }
-
-            pub fn sendMsg(self: *Self, msg: Message) !void {
+            pub fn send(self: *Self, msg: Msg) !void {
                 try self.sendFrame(.{
                     .fin = 1,
                     .opcode = msg.encoding.opcode(),
-                    .payload = msg.payload,
+                    .payload = msg.data,
                     .mask = 1,
                 }, 0);
             }
 
             fn sendFrame(self: *Self, frame: Frame, close_code: u16) !void {
                 const buf = try self.allocator.alloc(u8, frame.encodedLen());
+                errdefer self.allocator.free(buf);
                 _ = frame.encode(buf, close_code);
-                try self.downstream.sendZc(buf);
+                try self.transport.sendZc(buf);
             }
 
             pub fn onSend(self: *Self, buf: []const u8) void {
@@ -204,7 +201,7 @@ pub const asyn = struct {
                             .payload = frm.payload,
                         };
                         try msg.validate();
-                        self.upstream.onMessage(msg);
+                        self.handler.onMessage(Msg{ .encoding = msg.encoding, .data = msg.payload });
                     },
                     .start => {
                         assert(self.message == null);
@@ -227,7 +224,7 @@ pub const asyn = struct {
                             msg.deinit();
                             self.message = null;
                         }
-                        self.upstream.onMessage(msg.*);
+                        self.handler.onMessage(Msg{ .encoding = msg.encoding, .data = msg.payload });
                     },
                 }
             }
@@ -255,8 +252,6 @@ pub const asyn = struct {
             }
         };
     }
-
-    const testing = std.testing;
 
     test "async" {
         const Child = struct {

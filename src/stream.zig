@@ -668,14 +668,3 @@ test "deflate compress/decompress" {
         }
     }
 }
-
-test "size" {
-    const F = io.FixedBufferStream([]u8);
-    const S = Stream(F.Reader, F.Writer);
-    std.debug.print("size of Stream: {}\n", .{@sizeOf(S)});
-
-    const DecompressorType = std.compress.flate.Decompressor(io.FixedBufferStream([]const u8).Reader);
-    const CompressorType = std.compress.flate.Compressor(std.ArrayList(u8).Writer);
-    std.debug.print("size of DecompressorType: {}\n", .{@sizeOf(DecompressorType)});
-    std.debug.print("size of CompressorType: {}\n", .{@sizeOf(CompressorType)});
-}
