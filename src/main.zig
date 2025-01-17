@@ -33,9 +33,7 @@ const Options = @import("stream.zig").Options;
 const Frame = @import("frame.zig").Frame;
 
 pub const asyn = struct {
-    // Handler: upstream application handler
-    // Transport: downstream transport protocol
-    pub fn Client(comptime Handler: type, comptime Transport: type) type {
+    pub fn Client(comptime Handler: type) type {
         const HandshakeType = handshake.Client(
             std.io.FixedBufferStream([]u8).Reader,
             std.ArrayList(u8).Writer,
@@ -46,24 +44,21 @@ pub const asyn = struct {
 
             allocator: std.mem.Allocator,
             handler: *Handler,
-            transport: *Transport,
             uri: []const u8,
             opt: Options = .{},
             handshake: ?*HandshakeType = null,
-            conn: Conn(Handler, Transport),
+            conn: Conn(Handler),
 
             pub fn init(
                 allocator: std.mem.Allocator,
                 handler: *Handler,
-                transport: *Transport,
                 uri: []const u8,
             ) Self {
                 return .{
                     .allocator = allocator,
                     .handler = handler,
-                    .transport = transport,
                     .uri = uri,
-                    .conn = Conn(Handler, Transport).init(allocator, handler, transport),
+                    .conn = Conn(Handler).init(allocator, handler),
                 };
             }
 
@@ -91,7 +86,7 @@ pub const asyn = struct {
                 try hs.writeRequest(self.uri);
                 const buf = try list.toOwnedSlice();
                 errdefer self.allocator.free(buf);
-                try self.transport.sendZc(buf);
+                try self.handler.sendZc(buf);
             }
 
             pub fn onSend(self: *Self, buf: []const u8) void {
@@ -124,27 +119,18 @@ pub const asyn = struct {
         };
     }
 
-    pub fn Conn(comptime Handler: type, comptime Transport: type) type {
+    pub fn Conn(comptime Handler: type) type {
         return struct {
             const Self = @This();
 
             allocator: mem.Allocator,
             handler: *Handler,
-            transport: *Transport,
 
             last_frame_fragment: Frame.Fragment = .unfragmented,
             message: ?Message = null,
 
-            pub fn init(
-                allocator: mem.Allocator,
-                handler: *Handler,
-                transport: *Transport,
-            ) Self {
-                return .{
-                    .allocator = allocator,
-                    .handler = handler,
-                    .transport = transport,
-                };
+            pub fn init(allocator: mem.Allocator, handler: *Handler) Self {
+                return .{ .allocator = allocator, .handler = handler };
             }
 
             pub fn deinit(self: *Self) void {
@@ -182,7 +168,7 @@ pub const asyn = struct {
                 const buf = try self.allocator.alloc(u8, frame.encodedLen());
                 errdefer self.allocator.free(buf);
                 _ = frame.encode(buf, close_code);
-                try self.transport.sendZc(buf);
+                try self.handler.sendZc(buf);
             }
 
             pub fn onSend(self: *Self, buf: []const u8) void {
