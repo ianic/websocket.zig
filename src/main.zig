@@ -201,7 +201,7 @@ pub const asyn = struct {
                             .payload = frm.payload,
                         };
                         try msg.validate();
-                        self.handler.onMessage(Msg{ .encoding = msg.encoding, .data = msg.payload });
+                        self.handler.onRecv(Msg{ .encoding = msg.encoding, .data = msg.payload });
                     },
                     .start => {
                         assert(self.message == null);
@@ -224,7 +224,7 @@ pub const asyn = struct {
                             msg.deinit();
                             self.message = null;
                         }
-                        self.handler.onMessage(Msg{ .encoding = msg.encoding, .data = msg.payload });
+                        self.handler.onRecv(Msg{ .encoding = msg.encoding, .data = msg.payload });
                     },
                 }
             }
