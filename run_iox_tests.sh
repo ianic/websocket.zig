@@ -1,7 +1,7 @@
 #!/bin/bash -e
 
 cd ../iox/
-zig build -freference-trace -Doptimize=ReleaseFast
+zig build #-freference-trace #-Doptimize=ReleaseFast
 cd -
 
 url=ws://localhost:9001

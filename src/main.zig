@@ -232,7 +232,7 @@ pub const asyn = struct {
                 try self.sendFrame(.{ .fin = 1, .opcode = .pong, .payload = payload, .mask = 1 }, 0);
             }
 
-            pub fn close(self: *Self, close_code: u16, payload: []const u8) !void {
+            fn close(self: *Self, close_code: u16, payload: []const u8) !void {
                 assert(payload.len < 124);
                 try self.sendFrame(.{ .fin = 1, .opcode = .close, .payload = payload, .mask = 1 }, close_code);
             }
