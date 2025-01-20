@@ -1,7 +1,7 @@
 #!/bin/bash -e
 
-zig build -freference-trace -Doptimize=ReleaseFast
-#zig build -freference-trace
+#zig build -freference-trace -Doptimize=ReleaseFast
+zig build
 
 url=ws://localhost:9001
 msgs=$(websocat "$url/getCaseCount" -E --jsonrpc)

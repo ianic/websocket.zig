@@ -176,43 +176,51 @@ pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
             };
         }
 
+        fn decompress(self: *Self, msg: *Message) !void {
+            if (msg.compressed) {
+                const decompressor = self.decompressor orelse return error.DeflateNotSupported;
+                try msg.decompress(self.allocator, decompressor);
+                if (self.reset_decompressor) decompressor.* = .{};
+            }
+            try msg.validate();
+        }
+
         fn readMessage(self: *Self) !Message {
             // read first frame
             var frame = try self.readDataFrame();
-
-            // get encoding and compressed from first frame
-            const encoding = Message.Encoding.from(frame.opcode);
-            const compressed = frame.isCompressed();
 
             if (frame.isFin()) {
                 // if single frame return frame payload as message payload
                 // message takes ownership of the allocated payload
                 errdefer frame.deinit();
-                return self.initMessage(encoding, frame.payload, compressed);
+                var msg = Message{
+                    .encoding = Message.Encoding.from(frame.opcode),
+                    .compressed = frame.isCompressed(),
+                    .allocator = self.allocator,
+                    .payload = frame.payload,
+                };
+                try self.decompress(&msg);
+                return msg;
             }
 
             // other frames payload will be collected into payload
-            var payload = blk: {
-                errdefer frame.deinit();
-                const payload = try self.allocator.alloc(u8, frame.payload.len);
-                @memcpy(payload, frame.payload);
-                break :blk payload;
+            var msg = Message{
+                .encoding = Message.Encoding.from(frame.opcode),
+                .compressed = frame.isCompressed(),
+                .allocator = self.allocator,
+                .payload = try self.allocator.dupe(u8, frame.payload),
             };
+            errdefer msg.deinit();
             frame.deinit();
 
             while (true) {
-                errdefer self.allocator.free(payload);
                 frame = try self.readDataFrame();
                 defer frame.deinit();
-
-                // append frame.payload  to payload
-                const start = payload.len;
-                payload = try self.allocator.realloc(payload, start + frame.payload.len);
-                @memcpy(payload[start..], frame.payload);
-
-                if (frame.isFin())
-                    return self.initMessage(encoding, payload, compressed);
+                try msg.append(frame.payload);
+                if (frame.isFin()) break;
             }
+            try self.decompress(&msg);
+            return msg;
         }
 
         pub fn sendMessage(self: *Self, msg: Message) !void {
@@ -242,43 +250,6 @@ pub fn Stream(comptime ReaderType: type, comptime WriterType: type) type {
             }
             try self.writer.message(encoding, payload, false);
             return;
-        }
-
-        fn initMessage(
-            self: *Self,
-            encoding: Message.Encoding,
-            payload: []const u8,
-            payload_compressed: bool,
-        ) !Message {
-            if (payload_compressed) {
-                if (self.decompressor) |decompressor| {
-                    defer self.allocator.free(payload);
-
-                    var output = std.ArrayList(u8).init(self.allocator);
-                    defer output.deinit();
-
-                    // push payload to decompressor
-                    var input = io.fixedBufferStream(payload);
-                    decompressor.setReader(input.reader());
-                    decompressor.decompress(output.writer()) catch |err| switch (err) {
-                        error.EndOfStream => {},
-                        else => return err,
-                    };
-                    // add empty stored block
-                    input = io.fixedBufferStream(&[_]u8{ 0x00, 0x00, 0xff, 0xff });
-                    decompressor.setReader(input.reader());
-                    decompressor.decompress(output.writer()) catch |err| switch (err) {
-                        error.EndOfStream => {},
-                        else => return err,
-                    };
-
-                    if (self.reset_decompressor) self.resetDecompressor();
-                    return Message.init(self.allocator, encoding, try output.toOwnedSlice());
-                }
-
-                return error.DeflateNotSupported;
-            }
-            return Message.init(self.allocator, encoding, payload);
         }
 
         pub fn deinit(self: *Self) void {

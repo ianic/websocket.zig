@@ -95,7 +95,7 @@ pub fn Client(comptime ReaderType: type, comptime WriterType: type) type {
                 "Connection: Upgrade" ++ crlf ++
                 "Sec-WebSocket-Key: {s}" ++ crlf ++
                 "Sec-WebSocket-Version: 13" ++ crlf ++
-                "Sec-WebSocket-Extensions: permessage-deflate;" ++ crlf ++
+                "Sec-WebSocket-Extensions: permessage-deflate" ++ crlf ++
                 crlf;
             try self.writer.writeAll(try fmt.bufPrint(&buf, format, .{ uri, parseHost(uri), self.sec_key }));
         }
