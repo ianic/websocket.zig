@@ -39,7 +39,7 @@ pub const Message = struct {
         return self;
     }
 
-    pub fn deinit(self: *Self) void {
+    pub fn deinit(self: Self) void {
         if (self.allocator) |a| a.free(self.payload);
     }
 
