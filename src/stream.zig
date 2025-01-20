@@ -39,7 +39,7 @@ pub const Message = struct {
         return self;
     }
 
-    pub fn deinit(self: Self) void {
+    pub fn deinit(self: *Self) void {
         if (self.allocator) |a| a.free(self.payload);
     }
 
@@ -53,6 +53,34 @@ pub const Message = struct {
         const payload = try self.allocator.?.realloc(@constCast(self.payload), old_len + data.len);
         @memcpy(payload[old_len..], data);
         self.payload = payload;
+    }
+
+    pub fn decompress(self: *Message, allocator: mem.Allocator, decompressor: anytype) !void {
+        if (!self.compressed) return;
+
+        var output = std.ArrayList(u8).init(allocator);
+        defer output.deinit();
+
+        // push payload to decompressor
+        var input = io.fixedBufferStream(self.payload);
+        decompressor.setReader(input.reader());
+        decompressor.decompress(output.writer()) catch |err| switch (err) {
+            error.EndOfStream => {},
+            else => return err,
+        };
+        // add empty stored block
+        input = io.fixedBufferStream(&[_]u8{ 0x00, 0x00, 0xff, 0xff });
+        decompressor.setReader(input.reader());
+        decompressor.decompress(output.writer()) catch |err| switch (err) {
+            error.EndOfStream => {},
+            else => return err,
+        };
+
+        const old_payload = self.payload;
+        self.payload = try output.toOwnedSlice();
+        if (self.allocator) |a| a.free(old_payload);
+        self.allocator = allocator;
+        self.compressed = false;
     }
 };
 

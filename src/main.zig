@@ -58,7 +58,7 @@ pub const asyn = struct {
                     .allocator = allocator,
                     .handler = handler,
                     .uri = uri,
-                    .conn = Conn(Handler).init(allocator, handler),
+                    .conn = undefined,
                 };
             }
 
@@ -101,11 +101,25 @@ pub const asyn = struct {
                         error.EndOfStream => return 0,
                         else => return err,
                     };
-                    self.opt = hs.options;
+                    const options = hs.options;
                     const n = fbs.pos;
-                    hs.deinit();
-                    self.allocator.destroy(hs);
-                    self.handshake = null;
+                    {
+                        hs.deinit();
+                        self.allocator.destroy(hs);
+                        self.handshake = null;
+                    }
+
+                    self.conn = .{
+                        .allocator = self.allocator,
+                        .handler = self.handler,
+                        .decompressor = null,
+                        .reset_decompressor = options.server_no_context_takeover,
+                    };
+                    if (options.per_message_deflate) {
+                        const decompressor = try self.allocator.create(DecompressorType);
+                        decompressor.* = .{};
+                        self.conn.decompressor = decompressor;
+                    }
 
                     self.handler.onConnect();
                     return n + try self.conn.recv(bytes[n..]);
@@ -119,12 +133,17 @@ pub const asyn = struct {
         };
     }
 
+    const DecompressorType = std.compress.flate.Decompressor(std.io.FixedBufferStream([]const u8).Reader);
+
     pub fn Conn(comptime Handler: type) type {
         return struct {
             const Self = @This();
 
             allocator: mem.Allocator,
             handler: *Handler,
+
+            decompressor: ?*DecompressorType = null, // not null if per_message_deflate is negotiated
+            reset_decompressor: bool = false, //        true if sliding window is not negotiated
 
             last_frame_fragment: Frame.Fragment = .unfragmented,
             message: ?Message = null,
@@ -134,7 +153,10 @@ pub const asyn = struct {
             }
 
             pub fn deinit(self: *Self) void {
-                if (self.message) |msg| msg.deinit();
+                if (self.message) |*msg|
+                    msg.deinit();
+                if (self.decompressor) |decompressor|
+                    self.allocator.destroy(decompressor);
             }
 
             pub fn recv(self: *Self, bytes: []u8) !usize {
@@ -144,7 +166,7 @@ pub const asyn = struct {
                         error.SplitBuffer => return n,
                         else => return err,
                     };
-                    try frm.assertValid(false); // TODO deflate
+                    try frm.assertValid(self.decompressor != null);
                     if (frm.opcode.isControl()) {
                         try self.recvControlFrame(frm);
                     } else {
@@ -181,13 +203,13 @@ pub const asyn = struct {
                 switch (frm.fragment()) {
                     .unfragmented => {
                         assert(self.message == null);
-                        const msg = Message{
+                        var msg = Message{
                             .encoding = Message.Encoding.from(frm.opcode),
                             .compressed = frm.isCompressed(),
                             .payload = frm.payload,
                         };
-                        try msg.validate();
-                        self.handler.onRecv(Msg{ .encoding = msg.encoding, .data = msg.payload });
+                        defer msg.deinit();
+                        try self.recvMessage(&msg);
                     },
                     .start => {
                         assert(self.message == null);
@@ -203,16 +225,25 @@ pub const asyn = struct {
                         try msg.append(frm.payload);
                     },
                     .end => {
-                        const msg = &self.message.?;
+                        var msg = &self.message.?;
                         try msg.append(frm.payload);
-                        try msg.validate();
                         defer {
                             msg.deinit();
                             self.message = null;
                         }
-                        self.handler.onRecv(Msg{ .encoding = msg.encoding, .data = msg.payload });
+                        try self.recvMessage(msg);
                     },
                 }
+            }
+
+            fn recvMessage(self: *Self, msg: *Message) !void {
+                if (msg.compressed) {
+                    const decompressor = self.decompressor orelse return error.DeflateNotSupported;
+                    try msg.decompress(self.allocator, decompressor);
+                    if (self.reset_decompressor) decompressor.* = .{};
+                }
+                try msg.validate();
+                self.handler.onRecv(Msg{ .encoding = msg.encoding, .data = msg.payload });
             }
 
             fn recvControlFrame(self: *Self, frm: Frame) !void {
