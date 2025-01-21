@@ -13,6 +13,69 @@ pub const Msg = struct {
     data: []const u8,
 };
 
+pub fn Server(comptime Handler: type) type {
+    return struct {
+        const Self = @This();
+        const State = enum {
+            handshake,
+            open,
+        };
+
+        allocator: std.mem.Allocator,
+        handler: *Handler,
+        host: []const u8,
+        conn: Conn(Handler),
+        state: State,
+
+        pub fn init(
+            allocator: std.mem.Allocator,
+            handler: *Handler,
+            host: []const u8,
+        ) Self {
+            return .{
+                .allocator = allocator,
+                .handler = handler,
+                .host = host,
+                .conn = .{ .allocator = allocator, .handler = handler, .mask = 0 },
+                .state = .handshake,
+            };
+        }
+
+        pub fn connect(_: *Self) !void {}
+
+        pub fn deinit(self: *Self) void {
+            self.conn.deinit();
+        }
+
+        pub fn onSend(self: *Self, buf: []const u8) void {
+            self.allocator.free(buf);
+        }
+
+        pub fn recv(self: *Self, bytes: []u8) !usize {
+            switch (self.state) {
+                .handshake => {
+                    const req, const n = handshake.Req.parse(bytes) catch |err| switch (err) {
+                        error.SplitBuffer => return 0,
+                        else => return err,
+                    };
+                    const accept = handshake.secAccept(req.key);
+                    const buf = try handshake.responseAllocPrint(self.allocator, &accept, req.options);
+                    try self.handler.sendZc(buf);
+                    self.state = .open;
+                    return n;
+                },
+                .open => {
+                    return try self.conn.recv(bytes);
+                },
+            }
+        }
+
+        pub fn send(self: *Self, msg: Msg) !void {
+            try self.conn.send(msg);
+        }
+    };
+}
+
 pub fn Client(comptime Handler: type) type {
     return struct {
         const Self = @This();
@@ -39,7 +102,7 @@ pub fn Client(comptime Handler: type) type {
                 .handler = handler,
                 .uri = uri,
                 .sec_key = handshake.secKey(),
-                .conn = .{ .allocator = allocator, .handler = handler },
+                .conn = .{ .allocator = allocator, .handler = handler, .mask = 1 },
                 .state = .init,
             };
         }
@@ -74,6 +137,7 @@ pub fn Client(comptime Handler: type) type {
                         self.conn.decompressor = decompressor;
                         self.conn.reset_decompressor = options.server_no_context_takeover;
                     }
+                    self.state = .open;
                     self.handler.onConnect();
                     return n + try self.conn.recv(bytes[n..]);
                 },
@@ -85,7 +149,6 @@ pub fn Client(comptime Handler: type) type {
         }
 
         pub fn send(self: *Self, msg: Msg) !void {
-            if (self.state != .open) return error.InvalidState;
             try self.conn.send(msg);
         }
     };
@@ -105,10 +168,7 @@ pub fn Conn(comptime Handler: type) type {
 
         last_frame_fragment: Frame.Fragment = .unfragmented,
         message: ?Message = null,
-
-        pub fn init(allocator: mem.Allocator, handler: *Handler) Self {
-            return .{ .allocator = allocator, .handler = handler };
-        }
+        mask: u1,
 
         pub fn deinit(self: *Self) void {
             if (self.message) |*msg|
@@ -140,7 +200,7 @@ pub fn Conn(comptime Handler: type) type {
                 .fin = 1,
                 .opcode = msg.encoding.opcode(),
                 .payload = msg.data,
-                .mask = 1,
+                .mask = self.mask,
             }, 0);
         }
 
@@ -218,12 +278,12 @@ pub fn Conn(comptime Handler: type) type {
 
         fn pong(self: *Self, payload: []const u8) !void {
             assert(payload.len < 126);
-            try self.sendFrame(.{ .fin = 1, .opcode = .pong, .payload = payload, .mask = 1 }, 0);
+            try self.sendFrame(.{ .fin = 1, .opcode = .pong, .payload = payload, .mask = self.mask }, 0);
         }
 
         fn close(self: *Self, close_code: u16, payload: []const u8) !void {
             assert(payload.len < 124);
-            try self.sendFrame(.{ .fin = 1, .opcode = .close, .payload = payload, .mask = 1 }, close_code);
+            try self.sendFrame(.{ .fin = 1, .opcode = .close, .payload = payload, .mask = self.mask }, close_code);
         }
     };
 }

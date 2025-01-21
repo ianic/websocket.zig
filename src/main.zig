@@ -27,6 +27,7 @@ test {
 const asyn_ = @import("async.zig");
 
 pub const asyn = struct {
+    pub const Server = asyn_.Server;
     pub const Client = asyn_.Client;
     pub const Conn = asyn_.Conn;
 };

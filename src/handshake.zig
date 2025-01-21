@@ -32,7 +32,7 @@ test "random secKey" {
     //try testing.expectEqualStrings("/Hua7JHfD1waXr47jL/uAg==", &secKey());
 }
 
-fn secAccept(key: []const u8) [28]u8 {
+pub fn secAccept(key: []const u8) [28]u8 {
     var h = std.crypto.hash.Sha1.init(.{});
     var buf: [20]u8 = undefined;
 
@@ -394,30 +394,14 @@ pub const Rsp = struct {
             !std.ascii.eqlIgnoreCase(connection, "upgrade"))
             return error.NotWebsocketUpgradeResponse;
 
-        var options: Options = .{};
-        options.per_message_deflate = ascii.indexOfIgnoreCase(extensions, "permessage-deflate") != null;
-        options.server_no_context_takeover = ascii.indexOfIgnoreCase(extensions, "server_no_context_takeover") != null;
-        options.client_no_context_takeover = ascii.indexOfIgnoreCase(extensions, "client_no_context_takeover") != null;
-        if (paramValue(extensions, "server_max_window_bits")) |v|
-            options.server_max_window_bits = std.fmt.parseInt(u4, v, 10) catch 15;
-        if (paramValue(extensions, "client_max_window_bits")) |v|
-            options.client_max_window_bits = std.fmt.parseInt(u4, v, 10) catch 15;
-
         return .{
-            .{ .accept = accept, .extensions = extensions, .options = options }, head_end,
+            .{
+                .accept = accept,
+                .extensions = extensions,
+                .options = initOptions(extensions),
+            },
+            head_end,
         };
-    }
-
-    fn paramValue(header_value: []const u8, param: []const u8) ?[]const u8 {
-        var it = std.mem.tokenizeAny(u8, header_value, ";= ");
-        while (it.next()) |k| {
-            if (ascii.eqlIgnoreCase(k, param)) {
-                if (it.next()) |v| {
-                    return v;
-                }
-            }
-        }
-        return null;
     }
 
     test {
@@ -442,7 +426,31 @@ pub const Rsp = struct {
     }
 };
 
-const Req = struct {
+fn initOptions(extensions: []const u8) Options {
+    var options: Options = .{};
+    options.per_message_deflate = ascii.indexOfIgnoreCase(extensions, "permessage-deflate") != null;
+    options.server_no_context_takeover = ascii.indexOfIgnoreCase(extensions, "server_no_context_takeover") != null;
+    options.client_no_context_takeover = ascii.indexOfIgnoreCase(extensions, "client_no_context_takeover") != null;
+    if (paramValue(extensions, "server_max_window_bits")) |v|
+        options.server_max_window_bits = std.fmt.parseInt(u4, v, 10) catch 15;
+    if (paramValue(extensions, "client_max_window_bits")) |v|
+        options.client_max_window_bits = std.fmt.parseInt(u4, v, 10) catch 15;
+    return options;
+}
+
+fn paramValue(header_value: []const u8, param: []const u8) ?[]const u8 {
+    var it = std.mem.tokenizeAny(u8, header_value, ";= ");
+    while (it.next()) |k| {
+        if (ascii.eqlIgnoreCase(k, param)) {
+            if (it.next()) |v| {
+                return v;
+            }
+        }
+    }
+    return null;
+}
+
+pub const Req = struct {
     const Self = @This();
 
     host: []const u8,
@@ -450,8 +458,9 @@ const Req = struct {
     key: []const u8,
     version: []const u8,
     extensions: []const u8,
+    options: Options,
 
-    pub fn parse(bytes: []const u8) !Req {
+    pub fn parse(bytes: []const u8) !struct { Req, usize } {
         var hp: std.http.HeadParser = .{};
         const head_end = hp.feed(bytes);
         if (hp.state != .finished) return error.SplitBuffer;
@@ -512,13 +521,14 @@ const Req = struct {
             !std.ascii.eqlIgnoreCase(connection, "upgrade"))
             return error.NotWebsocketUpgradeResponse;
 
-        return .{
+        return .{ .{
             .host = host,
             .target = target,
             .key = key,
             .version = version,
             .extensions = extensions,
-        };
+            .options = initOptions(extensions),
+        }, head_end };
     }
 
     test {
@@ -564,3 +574,23 @@ pub fn requestAllocPrint(allocator: mem.Allocator, uri: []const u8, sec_key: []c
 pub fn requestBufPrint(buf: []u8, uri: []const u8, sec_key: []const u8) ![]const u8 {
     return try std.fmt.bufPrint(buf, request_format, .{ uri, parseHost(uri), sec_key });
 }
+
+pub fn responseAllocPrint(allocator: mem.Allocator, accept_key: []const u8, options: Options) ![]const u8 {
+    return if (options.per_message_deflate)
+        try std.fmt.allocPrint(allocator, response_format, .{accept_key})
+    else
+        try std.fmt.allocPrint(allocator, response_format_no_deflate, .{accept_key});
+}
+
+const response_format = "HTTP/1.1 101 Switching Protocols" ++ crlf ++
+    "Upgrade: WebSocket" ++ crlf ++
+    "Connection: Upgrade" ++ crlf ++
+    "Sec-WebSocket-Accept: {s}" ++ crlf ++
+    "Sec-WebSocket-Extensions: permessage-deflate;" ++ crlf ++
+    crlf;
+
+const response_format_no_deflate = "HTTP/1.1 101 Switching Protocols" ++ crlf ++
+    "Upgrade: WebSocket" ++ crlf ++
+    "Connection: Upgrade" ++ crlf ++
+    "Sec-WebSocket-Accept: {s}" ++ crlf ++
+    crlf;
