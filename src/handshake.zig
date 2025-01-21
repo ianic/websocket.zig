@@ -14,7 +14,7 @@ const WS_MAGIC_KEY = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 var base64Encoder = std.base64.standard.Encoder;
 var rnd = std.Random.DefaultPrng.init(0);
 
-fn secKey() [24]u8 {
+pub fn secKey() [24]u8 {
     if (builtin.is_test) {
         return "3yMLSWFdF1MH1YDDPW/aYQ==".*;
     }
@@ -46,7 +46,7 @@ fn secAccept(key: []const u8) [28]u8 {
     return ret;
 }
 
-fn isValidSecAccept(key: []const u8, accept: []const u8) bool {
+pub fn isValidSecAccept(key: []const u8, accept: []const u8) bool {
     return mem.eql(u8, accept, &secAccept(key));
 }
 
@@ -89,15 +89,7 @@ pub fn Client(comptime ReaderType: type, comptime WriterType: type) type {
 
         pub fn writeRequest(self: *Self, uri: []const u8) !void {
             var buf: [1024]u8 = undefined;
-            const format = "GET {s} HTTP/1.1" ++ crlf ++
-                "Host: {s}" ++ crlf ++
-                "Upgrade: websocket" ++ crlf ++
-                "Connection: Upgrade" ++ crlf ++
-                "Sec-WebSocket-Key: {s}" ++ crlf ++
-                "Sec-WebSocket-Version: 13" ++ crlf ++
-                "Sec-WebSocket-Extensions: permessage-deflate" ++ crlf ++
-                crlf;
-            try self.writer.writeAll(try fmt.bufPrint(&buf, format, .{ uri, parseHost(uri), self.sec_key }));
+            try self.writer.writeAll(try requestBufPrint(&buf, uri, &self.sec_key));
         }
 
         pub fn assertValidResponse(self: *Self) !void {
@@ -271,7 +263,7 @@ test "valid ws handshake" {
         "Connection: Upgrade\r\n" ++
         "Sec-WebSocket-Key: 3yMLSWFdF1MH1YDDPW/aYQ==\r\n" ++
         "Sec-WebSocket-Version: 13\r\n" ++
-        "Sec-WebSocket-Extensions: permessage-deflate;client_max_window_bits\r\n\r\n";
+        "Sec-WebSocket-Extensions: permessage-deflate\r\n\r\n";
     const http_response =
         "HTTP/1.1 101 Switching Protocols\r\n" ++
         "Upgrade: websocket\r\n" ++
@@ -340,4 +332,243 @@ test "parseHost from uri" {
     try testing.expectEqualStrings("example.com:80", parseHost("example.com:80"));
     try testing.expectEqualStrings("localhost:9001", parseHost("ws://localhost:9001/path"));
     try testing.expectEqualStrings("something", parseHost("something"));
+}
+
+const http = std.http;
+
+pub const Rsp = struct {
+    const Self = @This();
+
+    accept: []const u8,
+    extensions: []const u8,
+    options: Options,
+
+    pub fn validate(self: Rsp, sec_key: []const u8) !void {
+        if (!isValidSecAccept(sec_key, self.accept))
+            return error.InvalidWebsocketAcceptKey;
+    }
+
+    pub fn parse(bytes: []const u8) !struct { Self, usize } {
+        var hp: std.http.HeadParser = .{};
+        const head_end = hp.feed(bytes);
+        if (hp.state != .finished) return error.SplitBuffer;
+
+        var it = mem.splitSequence(u8, bytes, "\r\n");
+
+        const first_line = it.next().?;
+        if (first_line.len < 12) {
+            return error.HttpHeadersInvalid;
+        }
+
+        const version: http.Version = switch (int64(first_line[0..8])) {
+            int64("HTTP/1.0") => .@"HTTP/1.0",
+            int64("HTTP/1.1") => .@"HTTP/1.1",
+            else => return error.HttpHeadersInvalid,
+        };
+        if (first_line[8] != ' ') return error.HttpHeadersInvalid;
+        const status: http.Status = @enumFromInt(try std.fmt.parseInt(u10, first_line[9..12], 10));
+        const reason = mem.trimLeft(u8, first_line[12..], " ");
+        _ = reason;
+        _ = version;
+
+        var upgrade: []const u8 = &.{};
+        var connection: []const u8 = &.{};
+        var accept: []const u8 = &.{};
+        var extensions: []const u8 = &.{};
+
+        var iter = std.http.HeaderIterator.init(bytes[0..head_end]);
+        while (iter.next()) |h| {
+            if (std.ascii.eqlIgnoreCase(h.name, "connection")) {
+                connection = h.value;
+            } else if (std.ascii.eqlIgnoreCase(h.name, "upgrade")) {
+                upgrade = h.value;
+            } else if (std.ascii.eqlIgnoreCase(h.name, "sec-websocket-accept")) {
+                accept = h.value;
+            } else if (std.ascii.eqlIgnoreCase(h.name, "sec-websocket-extensions")) {
+                extensions = h.value;
+            }
+        }
+
+        if (status != http.Status.switching_protocols or
+            !std.ascii.eqlIgnoreCase(upgrade, "websocket") or
+            !std.ascii.eqlIgnoreCase(connection, "upgrade"))
+            return error.NotWebsocketUpgradeResponse;
+
+        var options: Options = .{};
+        options.per_message_deflate = ascii.indexOfIgnoreCase(extensions, "permessage-deflate") != null;
+        options.server_no_context_takeover = ascii.indexOfIgnoreCase(extensions, "server_no_context_takeover") != null;
+        options.client_no_context_takeover = ascii.indexOfIgnoreCase(extensions, "client_no_context_takeover") != null;
+        if (paramValue(extensions, "server_max_window_bits")) |v|
+            options.server_max_window_bits = std.fmt.parseInt(u4, v, 10) catch 15;
+        if (paramValue(extensions, "client_max_window_bits")) |v|
+            options.client_max_window_bits = std.fmt.parseInt(u4, v, 10) catch 15;
+
+        return .{
+            .{ .accept = accept, .extensions = extensions, .options = options }, head_end,
+        };
+    }
+
+    fn paramValue(header_value: []const u8, param: []const u8) ?[]const u8 {
+        var it = std.mem.tokenizeAny(u8, header_value, ";= ");
+        while (it.next()) |k| {
+            if (ascii.eqlIgnoreCase(k, param)) {
+                if (it.next()) |v| {
+                    return v;
+                }
+            }
+        }
+        return null;
+    }
+
+    test {
+        const bytes = "HTTP/1.1 101 Switching Protocols" ++ crlf ++
+            "Server: AutobahnTestSuite/0.8.2-0.10.9" ++ crlf ++
+            "X-Powered-By: AutobahnPython/0.10.9" ++ crlf ++
+            "Upgrade: WebSocket" ++ crlf ++
+            "Connection: Upgrade" ++ crlf ++
+            "Sec-WebSocket-Accept: ZBAEEEGewknsjRb8mwp3/qVSKxw=" ++ crlf ++
+            "Sec-WebSocket-Extensions: permessage-deflate; server_max_window_bits=12; client_max_window_bits=13; server_no_context_takeover;" ++ crlf ++
+            crlf ++ "0123456789";
+
+        const r, const n = try Rsp.parse(bytes);
+        try testing.expectEqual(bytes.len - 10, n);
+        try testing.expectEqualStrings("ZBAEEEGewknsjRb8mwp3/qVSKxw=", r.accept);
+        try testing.expectEqualStrings("permessage-deflate; server_max_window_bits=12; client_max_window_bits=13; server_no_context_takeover;", r.extensions);
+        try testing.expect(r.options.per_message_deflate);
+        try testing.expect(r.options.server_no_context_takeover);
+        try testing.expect(!r.options.client_no_context_takeover);
+        try testing.expectEqual(12, r.options.server_max_window_bits);
+        try testing.expectEqual(13, r.options.client_max_window_bits);
+    }
+};
+
+const Req = struct {
+    const Self = @This();
+
+    host: []const u8,
+    target: []const u8,
+    key: []const u8,
+    version: []const u8,
+    extensions: []const u8,
+
+    pub fn parse(bytes: []const u8) !Req {
+        var hp: std.http.HeadParser = .{};
+        const head_end = hp.feed(bytes);
+        if (hp.state != .finished) return error.SplitBuffer;
+
+        var it = mem.splitSequence(u8, bytes, "\r\n");
+
+        const first_line = it.next().?;
+        if (first_line.len < 10)
+            return error.HttpHeadersInvalid;
+
+        const method_end = mem.indexOfScalar(u8, first_line, ' ') orelse
+            return error.HttpHeadersInvalid;
+        if (method_end > 24) return error.HttpHeadersInvalid;
+
+        const method_str = first_line[0..method_end];
+        const method: http.Method = @enumFromInt(http.Method.parse(method_str));
+
+        const version_start = mem.lastIndexOfScalar(u8, first_line, ' ') orelse
+            return error.HttpHeadersInvalid;
+        if (version_start == method_end) return error.HttpHeadersInvalid;
+
+        const version_str = first_line[version_start + 1 ..];
+        if (version_str.len != 8) return error.HttpHeadersInvalid;
+        const http_version: http.Version = switch (int64(version_str[0..8])) {
+            int64("HTTP/1.0") => .@"HTTP/1.0",
+            int64("HTTP/1.1") => .@"HTTP/1.1",
+            else => return error.HttpHeadersInvalid,
+        };
+        const target = first_line[method_end + 1 .. version_start];
+
+        var connection: []const u8 = &.{};
+        var upgrade: []const u8 = &.{};
+        var host: []const u8 = &.{};
+        var key: []const u8 = &.{};
+        var version: []const u8 = &.{};
+        var extensions: []const u8 = &.{};
+
+        var iter = std.http.HeaderIterator.init(bytes[0..head_end]);
+        while (iter.next()) |h| {
+            if (std.ascii.eqlIgnoreCase(h.name, "host")) {
+                host = h.value;
+            } else if (std.ascii.eqlIgnoreCase(h.name, "connection")) {
+                connection = h.value;
+            } else if (std.ascii.eqlIgnoreCase(h.name, "upgrade")) {
+                upgrade = h.value;
+            } else if (std.ascii.eqlIgnoreCase(h.name, "sec-websocket-key")) {
+                key = h.value;
+            } else if (std.ascii.eqlIgnoreCase(h.name, "sec-websocket-version")) {
+                version = h.value;
+            } else if (std.ascii.eqlIgnoreCase(h.name, "sec-websocket-extensions")) {
+                extensions = h.value;
+            }
+        }
+
+        if (method != .GET or
+            http_version != .@"HTTP/1.1" or
+            !std.ascii.eqlIgnoreCase(upgrade, "websocket") or
+            !std.ascii.eqlIgnoreCase(connection, "upgrade"))
+            return error.NotWebsocketUpgradeResponse;
+
+        return .{
+            .host = host,
+            .target = target,
+            .key = key,
+            .version = version,
+            .extensions = extensions,
+        };
+    }
+
+    test {
+        const bytes =
+            "GET ws://ws.example.com/ws HTTP/1.1\r\n" ++
+            "Host: ws.example.com\r\n" ++
+            "Upgrade: websocket\r\n" ++
+            "Connection: Upgrade\r\n" ++
+            "Sec-WebSocket-Key: 3yMLSWFdF1MH1YDDPW/aYQ==\r\n" ++
+            "Sec-WebSocket-Version: 13\r\n" ++
+            "Sec-WebSocket-Extensions: permessage-deflate\r\n\r\n";
+        const r = try Req.parse(bytes);
+        try testing.expectEqualStrings("ws.example.com", r.host);
+        try testing.expectEqualStrings("ws://ws.example.com/ws", r.target);
+        try testing.expectEqualStrings("3yMLSWFdF1MH1YDDPW/aYQ==", r.key);
+        try testing.expectEqualStrings("13", r.version);
+        try testing.expectEqualStrings("permessage-deflate", r.extensions);
+    }
+};
+
+inline fn int64(array: *const [8]u8) u64 {
+    return @bitCast(array.*);
+}
+
+test {
+    _ = Req;
+    _ = Rsp;
+}
+
+const request_format = "GET {s} HTTP/1.1" ++ crlf ++
+    "Host: {s}" ++ crlf ++
+    "Upgrade: websocket" ++ crlf ++
+    "Connection: Upgrade" ++ crlf ++
+    "Sec-WebSocket-Key: {s}" ++ crlf ++
+    "Sec-WebSocket-Version: 13" ++ crlf ++
+    "Sec-WebSocket-Extensions: permessage-deflate" ++ crlf ++
+    crlf;
+
+fn hostFromUri(uri: []const u8) ![]const u8 {
+    const parsed = try std.Uri.parse(uri);
+    return if (parsed.host) |host| switch (host) {
+        .percent_encoded => |v| v,
+        .raw => |v| v,
+    } else "";
+}
+
+pub fn requestAllocPrint(allocator: mem.Allocator, uri: []const u8, sec_key: []const u8) ![]const u8 {
+    return try std.fmt.allocPrint(allocator, request_format, .{ uri, try hostFromUri(uri), sec_key });
+}
+
+pub fn requestBufPrint(buf: []u8, uri: []const u8, sec_key: []const u8) ![]const u8 {
+    return try std.fmt.bufPrint(buf, request_format, .{ uri, try hostFromUri(uri), sec_key });
 }

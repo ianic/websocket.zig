@@ -14,20 +14,20 @@ pub const Msg = struct {
 };
 
 pub fn Client(comptime Handler: type) type {
-    const HandshakeType = handshake.Client(
-        std.io.FixedBufferStream([]u8).Reader,
-        std.ArrayList(u8).Writer,
-    );
-
     return struct {
         const Self = @This();
+        const State = enum {
+            init,
+            handshake,
+            open,
+        };
 
         allocator: std.mem.Allocator,
         handler: *Handler,
         uri: []const u8,
-        opt: Options = .{},
-        handshake: ?*HandshakeType = null,
         conn: Conn(Handler),
+        sec_key: [24]u8,
+        state: State,
 
         pub fn init(
             allocator: std.mem.Allocator,
@@ -38,35 +38,21 @@ pub fn Client(comptime Handler: type) type {
                 .allocator = allocator,
                 .handler = handler,
                 .uri = uri,
+                .sec_key = handshake.secKey(),
                 .conn = .{ .allocator = allocator, .handler = handler },
+                .state = .init,
             };
         }
 
         pub fn deinit(self: *Self) void {
-            if (self.handshake) |hs| {
-                hs.deinit();
-                self.allocator.destroy(hs);
-                self.handshake = null;
-            }
             self.conn.deinit();
         }
 
         pub fn connect(self: *Self) !void {
-            var list = std.ArrayList(u8).init(self.allocator);
-            defer list.deinit();
-
-            const hs = try self.allocator.create(HandshakeType);
-            errdefer {
-                self.allocator.destroy(hs);
-                self.handshake = null;
-            }
-            hs.* = HandshakeType.init(self.allocator, undefined, list.writer());
-            self.handshake = hs;
-
-            try hs.writeRequest(self.uri);
-            const buf = try list.toOwnedSlice();
+            const buf = try handshake.requestAllocPrint(self.allocator, self.uri, &self.sec_key);
             errdefer self.allocator.free(buf);
             try self.handler.sendZc(buf);
+            self.state = .handshake;
         }
 
         pub fn onSend(self: *Self, buf: []const u8) void {
@@ -74,34 +60,32 @@ pub fn Client(comptime Handler: type) type {
         }
 
         pub fn recv(self: *Self, bytes: []u8) !usize {
-            if (self.handshake) |hs| {
-                var fbs = std.io.fixedBufferStream(bytes);
-                hs.reader = fbs.reader();
-                hs.assertValidResponse() catch |err| switch (err) {
-                    error.EndOfStream => return 0,
-                    else => return err,
-                };
-                const options = hs.options;
-                const n = fbs.pos;
-                {
-                    hs.deinit();
-                    self.allocator.destroy(hs);
-                    self.handshake = null;
-                }
-                if (options.per_message_deflate) {
-                    const decompressor = try self.allocator.create(DecompressorType);
-                    decompressor.* = .{};
-                    self.conn.decompressor = decompressor;
-                    self.conn.reset_decompressor = options.server_no_context_takeover;
-                }
-
-                self.handler.onConnect();
-                return n + try self.conn.recv(bytes[n..]);
+            switch (self.state) {
+                .handshake => {
+                    const rsp, const n = handshake.Rsp.parse(bytes) catch |err| switch (err) {
+                        error.SplitBuffer => return 0,
+                        else => return err,
+                    };
+                    try rsp.validate(&self.sec_key);
+                    const options = rsp.options;
+                    if (options.per_message_deflate) {
+                        const decompressor = try self.allocator.create(DecompressorType);
+                        decompressor.* = .{};
+                        self.conn.decompressor = decompressor;
+                        self.conn.reset_decompressor = options.server_no_context_takeover;
+                    }
+                    self.handler.onConnect();
+                    return n + try self.conn.recv(bytes[n..]);
+                },
+                .open => {
+                    return try self.conn.recv(bytes);
+                },
+                else => unreachable,
             }
-            return try self.conn.recv(bytes);
         }
 
         pub fn send(self: *Self, msg: Msg) !void {
+            if (self.state != .open) return error.InvalidState;
             try self.conn.send(msg);
         }
     };
