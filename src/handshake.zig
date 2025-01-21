@@ -557,18 +557,10 @@ const request_format = "GET {s} HTTP/1.1" ++ crlf ++
     "Sec-WebSocket-Extensions: permessage-deflate" ++ crlf ++
     crlf;
 
-fn hostFromUri(uri: []const u8) ![]const u8 {
-    const parsed = try std.Uri.parse(uri);
-    return if (parsed.host) |host| switch (host) {
-        .percent_encoded => |v| v,
-        .raw => |v| v,
-    } else "";
-}
-
 pub fn requestAllocPrint(allocator: mem.Allocator, uri: []const u8, sec_key: []const u8) ![]const u8 {
-    return try std.fmt.allocPrint(allocator, request_format, .{ uri, try hostFromUri(uri), sec_key });
+    return try std.fmt.allocPrint(allocator, request_format, .{ uri, parseHost(uri), sec_key });
 }
 
 pub fn requestBufPrint(buf: []u8, uri: []const u8, sec_key: []const u8) ![]const u8 {
-    return try std.fmt.bufPrint(buf, request_format, .{ uri, try hostFromUri(uri), sec_key });
+    return try std.fmt.bufPrint(buf, request_format, .{ uri, parseHost(uri), sec_key });
 }
