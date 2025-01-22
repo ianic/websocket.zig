@@ -62,7 +62,7 @@ pub fn Server(comptime Handler: type) type {
                     const buf = try handshake.responseAllocPrint(self.allocator, &accept, req.options);
                     try self.handler.sendZc(buf);
                     self.state = .open;
-                    return n;
+                    return n + try self.conn.recv(bytes[n..]);
                 },
                 .open => {
                     return try self.conn.recv(bytes);
