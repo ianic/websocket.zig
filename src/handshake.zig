@@ -423,6 +423,10 @@ pub const Rsp = struct {
         try testing.expect(!r.options.client_no_context_takeover);
         try testing.expectEqual(12, r.options.server_max_window_bits);
         try testing.expectEqual(13, r.options.client_max_window_bits);
+
+        for (0..bytes.len - 10) |i| {
+            try testing.expectError(error.SplitBuffer, Rsp.parse(bytes[0..i]));
+        }
     }
 };
 
@@ -539,13 +543,18 @@ pub const Req = struct {
             "Connection: Upgrade\r\n" ++
             "Sec-WebSocket-Key: 3yMLSWFdF1MH1YDDPW/aYQ==\r\n" ++
             "Sec-WebSocket-Version: 13\r\n" ++
-            "Sec-WebSocket-Extensions: permessage-deflate\r\n\r\n";
-        const r = try Req.parse(bytes);
+            "Sec-WebSocket-Extensions: permessage-deflate\r\n\r\n" ++ "0123456789";
+        const r, const n = try Req.parse(bytes);
+        try testing.expectEqual(bytes.len - 10, n);
         try testing.expectEqualStrings("ws.example.com", r.host);
         try testing.expectEqualStrings("ws://ws.example.com/ws", r.target);
         try testing.expectEqualStrings("3yMLSWFdF1MH1YDDPW/aYQ==", r.key);
         try testing.expectEqualStrings("13", r.version);
         try testing.expectEqualStrings("permessage-deflate", r.extensions);
+
+        for (0..bytes.len - 10) |i| {
+            try testing.expectError(error.SplitBuffer, Req.parse(bytes[0..i]));
+        }
     }
 };
 

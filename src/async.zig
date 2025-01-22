@@ -291,26 +291,28 @@ pub fn Conn(comptime Handler: type) type {
 test "async" {
     const Handler = struct {
         const Self = @This();
-        control_frames: usize = 0,
+        sent_frames: usize = 0,
         messages: usize = 0,
-        pub fn onControlFrame(self: *Self, frm: Frame) !void {
-            _ = frm;
-            self.control_frames += 1;
-        }
+
         pub fn onRecv(self: *Self, msg: Msg) void {
             testing.expectEqual(msg.encoding, .text) catch unreachable;
             testing.expectEqualSlices(u8, &[_]u8{ 10, 11, 12, 13, 14, 15 }, msg.data) catch unreachable;
             self.messages += 1;
         }
-        pub fn sendZc(_: *Self, _: []const u8) !void {}
+        pub fn sendZc(self: *Self, buf: []const u8) !void {
+            const pong_frame = [_]u8{ 0x8a, 0x80, 0xdf, 0x23, 0xb, 0x49 };
+            self.sent_frames += 1;
+            testing.expectEqualSlices(u8, &pong_frame, buf) catch unreachable;
+            testing.allocator.free(buf);
+        }
     };
     var handler: Handler = .{};
 
-    var conn = Conn(Handler).init(testing.allocator, &handler);
+    var conn = Conn(Handler){ .allocator = testing.allocator, .handler = &handler, .mask = 1 };
     defer conn.deinit();
     const n = try conn.recv(@constCast(&fixture_fragmented_message));
     try testing.expectEqual(16, n);
-    try testing.expectEqual(2, handler.control_frames);
+    try testing.expectEqual(1, handler.sent_frames);
     try testing.expectEqual(1, handler.messages);
 }
 
